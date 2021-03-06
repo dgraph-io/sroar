@@ -1,33 +1,50 @@
 package roar
 
+import (
+	"github.com/dgraph-io/ristretto/z"
+)
+
 var (
 	pageSize = 512
+	empty    = make([]byte, 2<<16)
 )
 
 // First 8 bytes should contain the length of the array.
 type roaringArray []byte
 
-func (ra roaringArray) newContainer(sz int) int {
-	m := make([]byte, sz)
-	offset := len(ra)
-	ra = append(ra, m...)
-
-	c := ra.getContainer(offset)
-	c.set(indexSize, sz)
+func fastExpand(ra []byte, bySize uint16) []byte {
+	return append(ra, empty[:bySize]...)
 }
 
-func (ra roaringArray) expandContainer(offset int, bySize int) {
-	sz := getSize(ra[offset : offset+4])
+func (ra *roaringArray) newContainer(sz uint16) int {
+	offset := len(*ra)
+	*ra = fastExpand(*ra, sz)
 
-	m := make([]byte, bySize)
-	ra = append(ra, m...)
+	c := container(toUint16Slice((*ra)[offset : offset+int(sz)]))
+	c.set(indexSize, uint16(sz))
+	return offset
+}
 
-	left := offset + sz
-	right := len(ra) - left
-	copy(ra[left:], ra[right:])
+func (ra *roaringArray) expandContainer(offset int, bySize uint16) {
+	sz := getSize((*ra)[offset : offset+4])
 
-	c := ra.getContainer(offset)
-	c.set(indexSize, sz+bySize)
+	// Select the portion to the right of the container, beyond its right boundary.
+	from := offset + int(sz)
+	beyond := (*ra)[from:]
+
+	// Expand the underlying buffer.
+	*ra = fastExpand(*ra, bySize)
+
+	// Move the beyond portion to the right, to make space for the container.
+	right := (*ra)[len(*ra)-len(beyond):]
+	copy(right, beyond)
+	z.ZeroOut(*ra, from, from+int(bySize))
+
+	// Move other containers to the right.
+	// TODO: We need to update their offsets in keys.go.
+
+	c := container(toUint16Slice((*ra)[offset : offset+int(sz+bySize)]))
+	c.set(indexSize, uint16(sz+bySize))
 }
 
 func (ra roaringArray) getContainer(offset int) container {

@@ -19,7 +19,7 @@ func (n node) uint64(start int) uint64 { return n[start] }
 func keyOffset(i int) int          { return 2 * i }
 func valOffset(i int) int          { return 2*i + 1 }
 func (n node) numKeys() int        { return int(n.uint64(valOffset(0))) }
-func (n node) maxKeys() int        { return len(node)/2 - 1 }
+func (n node) maxKeys() int        { return len(n)/2 - 1 }
 func (n node) key(i int) uint64    { return n.uint64(keyOffset(i)) }
 func (n node) val(i int) uint64    { return n.uint64(valOffset(i)) }
 func (n node) data(i int) []uint64 { return n[keyOffset(i):keyOffset(i+1)] }
@@ -44,7 +44,7 @@ func (n node) maxKey() uint64 {
 
 func (n node) moveRight(lo int) {
 	hi := n.numKeys()
-	assert(hi != maxKeys)
+	assert(hi != n.maxKeys())
 	// copy works despite of overlap in src and dst.
 	// See https://golang.org/pkg/builtin/#copy
 	copy(n[keyOffset(lo+1):keyOffset(hi+1)], n[keyOffset(lo):keyOffset(hi)])
@@ -67,6 +67,12 @@ func (n node) search(k uint64) int {
 		return N
 	}
 	return int(simd.Search(n[:2*N], k))
+}
+
+func zeroOut(data []uint64) {
+	for i := 0; i < len(data); i++ {
+		data[i] = 0
+	}
 }
 
 // compacts the node i.e., remove all the kvs with value < lo. It returns the remaining number of
@@ -114,7 +120,7 @@ func (n node) get(k uint64) uint64 {
 func (n node) set(k, v uint64) (numAdded int) {
 	idx := n.search(k)
 	ki := n.key(idx)
-	if n.numKeys() == maxKeys {
+	if n.numKeys() == n.maxKeys() {
 		// This happens during split of non-root node, when we are updating the child pointer of
 		// right node. Hence, the key should already exist.
 		assert(ki == k)
@@ -139,7 +145,7 @@ func (n node) set(k, v uint64) (numAdded int) {
 }
 
 func (n node) iterate(fn func(node, int)) {
-	for i := 0; i < maxKeys; i++ {
+	for i := 0; i < n.maxKeys(); i++ {
 		if k := n.key(i); k > 0 {
 			fn(n, i)
 		} else {
@@ -158,6 +164,5 @@ func (n node) print(parentID uint64) {
 		keys[3] = "..."
 		keys = keys[:8]
 	}
-	fmt.Printf("%d Child of: %d num keys: %d keys: %s\n",
-		n.pageID(), parentID, n.numKeys(), strings.Join(keys, " "))
+	fmt.Printf("num keys: %d keys: %s\n", n.numKeys(), strings.Join(keys, " "))
 }

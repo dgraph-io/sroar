@@ -1,10 +1,27 @@
 package roar
 
 import (
+	"log"
 	"reflect"
 	"runtime"
 	"unsafe"
+
+	"github.com/pkg/errors"
 )
+
+func assert(b bool) {
+	if !b {
+		log.Fatalf("%+v", errors.Errorf("Assertion failure"))
+	}
+}
+func check(err error) {
+	if err != nil {
+		log.Fatalf("%+v", err)
+	}
+}
+func check2(_ interface{}, err error) {
+	check(err)
+}
 
 // These methods (byteSliceAsUint16Slice,...) do not make copies,
 // they are pointer-based (unsafe). The caller is responsible to
