@@ -3,7 +3,6 @@ package roar
 import (
 	"log"
 	"reflect"
-	"runtime"
 	"unsafe"
 
 	"github.com/pkg/errors"
@@ -28,24 +27,32 @@ func check2(_ interface{}, err error) {
 // ensure that the input slice does not get garbage collected, deleted
 // or modified while you hold the returned slince.
 ////
-func toUint16Slice(slice []byte) (result []uint16) { // here we create a new slice holder
-	if len(slice)%2 != 0 {
+func toUint16Slice(b []byte) (result []uint16) { // here we create a new slice holder
+	if len(b)%2 != 0 {
 		panic("Slice size should be divisible by 2")
 	}
 	// reference: https://go101.org/article/unsafe.html
 
-	// make a new slice header
-	bHeader := (*reflect.SliceHeader)(unsafe.Pointer(&slice))
-	rHeader := (*reflect.SliceHeader)(unsafe.Pointer(&result))
-
-	// transfer the data from the given slice to a new variable (our result)
-	rHeader.Data = bHeader.Data
-	rHeader.Len = bHeader.Len / 2
-	rHeader.Cap = bHeader.Cap / 2
-
-	// instantiate result and use KeepAlive so data isn't unmapped.
-	runtime.KeepAlive(&slice) // it is still crucial, GC can free it)
-
-	// return result
-	return
+	var u16s []uint16
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u16s))
+	hdr.Len = len(b) / 2
+	hdr.Cap = hdr.Len
+	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
+	return u16s
 }
+
+// BytesToU32Slice converts the given byte slice to uint32 slice
+func toUint64Slice(b []byte) []uint64 {
+	if len(b) == 0 {
+		return nil
+	}
+	var u64s []uint64
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u64s))
+	hdr.Len = len(b) / 8
+	hdr.Cap = hdr.Len
+	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
+	return u64s
+}
+
+func sizeInBytesU16(n int) int { return n * 2 }
+func sizeInBytesU64(n int) int { return n * 8 }
