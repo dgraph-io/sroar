@@ -1,14 +1,18 @@
 package roar
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/dgraph-io/ristretto/z"
 )
 
 var (
-	empty = make([]byte, 2<<16)
+	empty   = make([]byte, 2<<16)
+	minSize = uint16(32)
 )
+
+const mask = uint64(0xFFFFFFFFFFFF0000)
 
 // First 8 bytes should contain the length of the array.
 type roaringArray struct {
@@ -24,30 +28,32 @@ func NewRoaringArray(numKeys int) *roaringArray {
 	return ra
 }
 
+// getKey returns the offset for container corresponding to key k.
+func (ra *roaringArray) getKey(k uint64) uint64 {
+	return ra.keys.get(k)
+}
+
 func (ra *roaringArray) setKey(k uint64, offset uint64) {
 	if num := ra.keys.set(k, offset); num == 0 {
 		// No new key was added. So, we can just return.
 		return
 	}
+	fmt.Printf("setKey: %d offset: %d. Added one\n", k, offset)
 	// A new key was added. Let's ensure that ra.keys is not full.
 	if !ra.keys.isFull() {
 		return
 	}
 
+	fmt.Printf("keys are full\n")
 	// ra.keys is full. We should expand its size.
 	// TODO: Refactor this move stuff.
-	curSize := len(ra.keys) * 8
-	beyond := ra.data[curSize:]
 
+	curSize := uint64(len(ra.keys) * 8)
 	bySize := curSize
 	if bySize > math.MaxUint16 {
 		bySize = math.MaxInt16
 	}
-	fastExpand(ra.data, uint16(bySize))
-
-	right := ra.data[len(ra.data)-len(beyond):]
-	copy(right, beyond)
-	z.ZeroOut(ra.data, curSize, curSize+bySize)
+	ra.scootRight(curSize, uint16(bySize))
 
 	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
 
@@ -66,40 +72,57 @@ func fastExpand(ra []byte, bySize uint16) []byte {
 	return append(ra, empty[:bySize]...)
 }
 
-func (ra *roaringArray) newContainer(sz uint16) int {
-	offset := len(ra.data)
+func (ra *roaringArray) scootRight(offset uint64, bySize uint16) {
+	left := ra.data[offset:]
+	ra.data = fastExpand(ra.data, bySize) // Expand the buffer.
+	right := ra.data[len(ra.data)-len(left):]
+	copy(right, left)                                 // Move data right.
+	z.Memclr(ra.data[offset : offset+uint64(bySize)]) // Zero out the space in the middle.
+}
+
+func (ra *roaringArray) newContainer(sz uint16) uint64 {
+	offset := uint64(len(ra.data))
 	ra.data = fastExpand(ra.data, sz)
 
-	c := container(toUint16Slice(ra.data[offset : offset+int(sz)]))
+	c := container(toUint16Slice(ra.data[offset : offset+uint64(sz)]))
 	c.set(indexSize, uint16(sz))
 	return offset
 }
 
-func (ra *roaringArray) expandContainer(offset int, bySize uint16) {
+func (ra *roaringArray) expandContainer(offset uint64, bySize uint16) {
 	sz := getSize(ra.data[offset : offset+4])
 
 	// Select the portion to the right of the container, beyond its right boundary.
-	from := offset + int(sz)
-	beyond := ra.data[from:]
+	ra.scootRight(offset+uint64(sz), bySize)
 
-	// Expand the underlying buffer.
-	ra.data = fastExpand(ra.data, bySize)
-
-	// Move the beyond portion to the right, to make space for the container.
-	right := ra.data[len(ra.data)-len(beyond):]
-	copy(right, beyond)
-	z.ZeroOut(ra.data, from, from+int(bySize))
-
-	// Move other containers to the right.
 	// TODO: We need to update their offsets in keys.go.
 
-	c := container(toUint16Slice(ra.data[offset : offset+int(sz+bySize)]))
+	c := container(toUint16Slice(ra.data[offset : offset+uint64(sz+bySize)]))
 	c.set(indexSize, uint16(sz+bySize))
 }
 
-func (ra roaringArray) getContainer(offset int) container {
+func (ra roaringArray) getContainer(offset uint64) container {
 	data := ra.data[offset:]
 	c := container(toUint16Slice(data))
 	sz := c.get(indexSize)
 	return c[:sz/2]
+}
+
+func (ra *roaringArray) Add(x uint64) {
+	key := x & mask
+	fmt.Printf("Add: %d. Key: %d\n", x, key)
+	offset := ra.getKey(key)
+	fmt.Printf("add: %d. offset: %d\n", x, offset)
+	if offset == 0 {
+		// We need to add a container.
+		offset = uint64(ra.newContainer(minSize))
+		fmt.Printf("offset: %d\n", offset)
+		ra.setKey(key, offset)
+	}
+	c := ra.getContainer(offset)
+
+	// TODO: Set the keys in there.
+	num := c.get(indexCardinality)
+	c.set(indexCardinality, num+1)
+	fmt.Printf("container at offset: %d. num: %d\n", offset, num+1)
 }

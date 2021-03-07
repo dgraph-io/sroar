@@ -13,7 +13,7 @@ func fill(c container, b uint16) {
 }
 
 func TestContainer(t *testing.T) {
-	ra := roaringArray(make([]byte, 8))
+	ra := NewRoaringArray(1)
 
 	offset := ra.newContainer(128)
 	c := ra.getContainer(offset)
@@ -57,4 +57,18 @@ func TestContainer(t *testing.T) {
 			require.Equalf(t, uint16(0x00), c.data()[i], "at index: %d", i)
 		}
 	}
+}
+
+func TestKey(t *testing.T) {
+	ra := NewRoaringArray(1)
+	t.Logf("Num keys: %d\n", ra.keys.numKeys())
+
+	for i := 0; i < 10; i++ {
+		ra.Add(uint64(i))
+	}
+
+	off := ra.getKey(0)
+	t.Logf("Got offset: %d\n", off)
+	c := ra.getContainer(off)
+	require.Equal(t, uint16(10), c.get(indexCardinality))
 }

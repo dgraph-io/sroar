@@ -66,6 +66,7 @@ func (n node) search(k uint64) int {
 		}
 		return N
 	}
+	fmt.Printf("Size N: %d n: %d Want: %d\n", N, len(n), 2*N)
 	return int(simd.Search(n[:2*N], k))
 }
 
