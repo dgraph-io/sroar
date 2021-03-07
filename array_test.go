@@ -1,8 +1,6 @@
 package roar
 
 import (
-	"encoding/hex"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,8 +23,6 @@ func TestModify(t *testing.T) {
 	for i := 0; i < len(o); i++ {
 		require.Equal(t, uint64(i), o[i])
 	}
-
-	t.Logf("data:\n%s\n", hex.Dump(data))
 }
 
 func TestContainer(t *testing.T) {
@@ -78,23 +74,28 @@ func TestContainer(t *testing.T) {
 
 func TestKey(t *testing.T) {
 	ra := NewRoaringArray(2)
-	t.Logf("Num keys: %d\n", ra.keys.numKeys())
-
 	for i := 0; i < 10; i++ {
 		ra.Add(uint64(i))
 	}
-	fmt.Println()
-	fmt.Println()
-	fmt.Println()
 
 	off, has := ra.keys.getValue(0)
 	require.True(t, has)
-	t.Logf("Got offset: %d\n", off)
 	c := ra.getContainer(off)
 	require.Equal(t, uint16(10), c.get(indexCardinality))
 
 	// Create 10 containers
 	for i := 0; i < 10; i++ {
 		ra.Add(uint64(i)<<16 + 1)
+	}
+
+	for i := 0; i < 10; i++ {
+		ra.Add(uint64(i)<<16 + 2)
+	}
+
+	for i := 1; i < 10; i++ {
+		offset, has := ra.keys.getValue(uint64(i) << 16)
+		require.True(t, has)
+		c = ra.getContainer(offset)
+		require.Equal(t, uint16(2), c.get(indexCardinality))
 	}
 }

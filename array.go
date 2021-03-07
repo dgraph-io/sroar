@@ -1,7 +1,6 @@
 package roar
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/dgraph-io/ristretto/z"
@@ -37,26 +36,20 @@ func NewRoaringArray(numKeys int) *roaringArray {
 	ra.keys.setAt(3, offset) // First two are for num keys. index=2 -> 0 key. index=3 -> offset.
 	ra.keys.setNumKeys(1)
 
-	fmt.Printf("len keys: %d len data: %d\n", len(ra.keys), len(ra.data))
 	return ra
 }
 
 func (ra *roaringArray) setKey(k uint64, offset uint64) uint64 {
-	fmt.Printf("len of keys node: %d\n", len(ra.keys))
 	if num := ra.keys.set(k, offset); num == 0 {
 		// No new key was added. So, we can just return.
 		return offset
 	}
-	fmt.Printf("setKey: %d offset: %d. Added one\n", k, offset)
 	// A new key was added. Let's ensure that ra.keys is not full.
 	if !ra.keys.isFull() {
 		return offset
 	}
 
-	fmt.Printf("keys are full\n")
 	// ra.keys is full. We should expand its size.
-	// TODO: Refactor this move stuff.
-
 	curSize := uint64(len(ra.keys) * 8)
 	bySize := curSize
 	if bySize > math.MaxUint16 {
@@ -69,13 +62,9 @@ func (ra *roaringArray) setKey(k uint64, offset uint64) uint64 {
 	// All containers have moved to the right by bySize bytes.
 	// Update their offsets.
 	n := ra.keys
-	fmt.Printf("max keys: %d\n", n.maxKeys())
 	for i := 0; i < n.maxKeys(); i++ {
-		k := n.key(i)
 		val := n.val(i)
-		fmt.Printf("i: %d key: %d val: %d\n", i, k, val)
 		if val > 0 {
-			fmt.Printf("Moving. i: %d key: %d val: %d\n", i, k, val+uint64(bySize))
 			n.setAt(valOffset(i), val+uint64(bySize))
 		}
 	}
@@ -133,22 +122,17 @@ func (ra roaringArray) getContainer(offset uint64) container {
 
 func (ra *roaringArray) Add(x uint64) {
 	key := x & mask
-	fmt.Printf("\nAdd: %d. Key: %d\n", x, key)
 	offset, has := ra.keys.getValue(key)
-	fmt.Printf("add: %d. offset: %d\n", x, offset)
 	if !has {
 		// We need to add a container.
 		o := uint64(ra.newContainer(minSize))
 
 		// offset might have been updated by setKey.
 		offset = ra.setKey(key, o)
-		fmt.Printf("key has been set: %d\n", key)
 	}
-	fmt.Printf("got offset: %d\n", offset)
 	c := ra.getContainer(offset)
 
 	// TODO: Set the keys in there.
 	num := c.get(indexCardinality)
 	c.set(indexCardinality, num+1)
-	fmt.Printf("container at offset: %d. num: %d\n", offset, num+1)
 }

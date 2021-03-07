@@ -3,8 +3,6 @@ package roar
 import (
 	"fmt"
 	"strings"
-
-	"github.com/dgraph-io/ristretto/z/simd"
 )
 
 // node stores uint64 keys and the corresponding container offset in the buffer.
@@ -58,16 +56,18 @@ func (n node) isFull() bool {
 // Search returns the index of a smallest key >= k in a node.
 func (n node) search(k uint64) int {
 	N := n.numKeys()
-	if N < 4 {
-		for i := 0; i < N; i++ {
-			if ki := n.key(i); ki >= k {
-				return i
-			}
+	// if N < 4 {
+	for i := 0; i < N; i++ {
+		ki := n.key(i)
+		if ki >= k {
+			return i
 		}
-		return N
 	}
-	fmt.Printf("Size N: %d n: %d Want: %d\n", N, len(n), 2*N)
-	return int(simd.Search(n[2:2*N], k))
+	return N
+	// simd.Search has a bug which causes this to return index 11 when it should be returning index
+	// 9.
+	// }
+	// return int(simd.Search(n[keyOffset(0):keyOffset(N)], k))
 }
 
 func zeroOut(data []uint64) {
@@ -107,28 +107,22 @@ func (n node) compact(lo uint64) int {
 
 // getValue returns the value corresponding to the key if found.
 func (n node) getValue(k uint64) (uint64, bool) {
+	k &= mask // Ensure k has its lowest bits unset.
 	idx := n.search(k)
-	fmt.Printf("getValue.idx: %d. numKeys: %d\n", idx, n.numKeys())
 	// key is not found
-	if idx == n.numKeys() {
+	if idx >= n.numKeys() {
 		return 0, false
 	}
 	if ki := n.key(idx); ki == k {
-		fmt.Printf("ki: %d k: %d\n", ki, k)
 		return n.val(idx), true
-	} else {
-		fmt.Printf("ki: %d k: %d\n", ki, k)
 	}
 	return 0, false
 }
 
 // set returns true if it added a new key.
 func (n node) set(k, v uint64) (numAdded int) {
-	fmt.Printf("set k: %d v: %d\n", k, v)
 	idx := n.search(k)
-	fmt.Printf("0 idx: %d for key: %d\n", idx, k)
 	ki := n.key(idx)
-	fmt.Printf("idx: %d for key: %d. ki: %d\n", idx, k, ki)
 	if n.numKeys() == n.maxKeys() {
 		// This happens during split of non-root node, when we are updating the child pointer of
 		// right node. Hence, the key should already exist.
@@ -146,7 +140,6 @@ func (n node) set(k, v uint64) (numAdded int) {
 		numAdded = 1
 	}
 	if ki == 0 || ki >= k {
-		fmt.Printf("len n: %d\n", len(n))
 		n.setAt(keyOffset(idx), k)
 		n.setAt(valOffset(idx), v)
 		return
