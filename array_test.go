@@ -1,6 +1,7 @@
 package roar
 
 import (
+	"encoding/hex"
 	"fmt"
 	"testing"
 
@@ -11,6 +12,21 @@ func fill(c container, b uint16) {
 	for i := range c.data() {
 		c.data()[i] = b
 	}
+}
+
+func TestModify(t *testing.T) {
+	data := make([]byte, 32)
+	s := toUint64Slice(data)
+	for i := 0; i < len(s); i++ {
+		s[i] = uint64(i)
+	}
+
+	o := toUint64Slice(data)
+	for i := 0; i < len(o); i++ {
+		require.Equal(t, uint64(i), o[i])
+	}
+
+	t.Logf("data:\n%s\n", hex.Dump(data))
 }
 
 func TestContainer(t *testing.T) {
@@ -71,7 +87,7 @@ func TestKey(t *testing.T) {
 	fmt.Println()
 	fmt.Println()
 
-	off, has := ra.getKey(0)
+	off, has := ra.keys.getValue(0)
 	require.True(t, has)
 	t.Logf("Got offset: %d\n", off)
 	c := ra.getContainer(off)

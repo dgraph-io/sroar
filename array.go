@@ -29,7 +29,7 @@ func NewRoaringArray(numKeys int) *roaringArray {
 		// Plus, we need to make space for the first 2 uint64s to store the number of keys.
 		data: make([]byte, sizeInBytesU64(2*numKeys+2)),
 	}
-	ra.keys = toUint64Slice(ra.data[:len(ra.data)])
+	ra.keys = toUint64Slice(ra.data)
 
 	// Always generate a container for key = 0x00. Otherwise, node gets confused about whether a
 	// zero key is a new key or not.
@@ -41,21 +41,16 @@ func NewRoaringArray(numKeys int) *roaringArray {
 	return ra
 }
 
-// getKey returns the offset for container corresponding to key k.
-func (ra *roaringArray) getKey(k uint64) (uint64, bool) {
-	return ra.keys.getValue(k)
-}
-
-func (ra *roaringArray) setKey(k uint64, offset uint64) {
+func (ra *roaringArray) setKey(k uint64, offset uint64) uint64 {
 	fmt.Printf("len of keys node: %d\n", len(ra.keys))
 	if num := ra.keys.set(k, offset); num == 0 {
 		// No new key was added. So, we can just return.
-		return
+		return offset
 	}
 	fmt.Printf("setKey: %d offset: %d. Added one\n", k, offset)
 	// A new key was added. Let's ensure that ra.keys is not full.
 	if !ra.keys.isFull() {
-		return
+		return offset
 	}
 
 	fmt.Printf("keys are full\n")
@@ -67,16 +62,9 @@ func (ra *roaringArray) setKey(k uint64, offset uint64) {
 	if bySize > math.MaxUint16 {
 		bySize = math.MaxInt16
 	}
-	for i := 0; i < len(ra.keys); i++ {
-		fmt.Printf("i: %d uint64: %d\n", i, ra.keys[i])
-	}
-	ra.scootRight(curSize, uint16(bySize))
-	fmt.Printf("Scoot done by size: %d curSize: %d\n", bySize, curSize)
 
+	ra.scootRight(curSize, uint16(bySize))
 	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
-	for i := 0; i < len(ra.keys); i++ {
-		fmt.Printf("After i: %d uint64: %d\n", i, ra.keys[i])
-	}
 
 	// All containers have moved to the right by bySize bytes.
 	// Update their offsets.
@@ -87,26 +75,37 @@ func (ra *roaringArray) setKey(k uint64, offset uint64) {
 		val := n.val(i)
 		fmt.Printf("i: %d key: %d val: %d\n", i, k, val)
 		if val > 0 {
+			fmt.Printf("Moving. i: %d key: %d val: %d\n", i, k, val+uint64(bySize))
 			n.setAt(valOffset(i), val+uint64(bySize))
 		}
 	}
+	return offset + bySize
 }
 
-func fastExpand(ra []byte, bySize uint16) []byte {
-	return append(ra, empty[:bySize]...)
+func (ra *roaringArray) fastExpand(bySize uint16) {
+	prev := len(ra.keys) * 8
+	ra.data = append(ra.data, empty[:bySize]...)
+
+	// We should re-reference ra.keys correctly, because the underlying array might have been
+	// switched after append.
+	ra.keys = toUint64Slice(ra.data[:prev])
 }
 
 func (ra *roaringArray) scootRight(offset uint64, bySize uint16) {
+	prevHash := z.MemHash(ra.data[:offset])
 	left := ra.data[offset:]
-	ra.data = fastExpand(ra.data, bySize) // Expand the buffer.
+	ra.fastExpand(bySize) // Expand the buffer.
 	right := ra.data[len(ra.data)-len(left):]
 	copy(right, left)                                 // Move data right.
 	z.Memclr(ra.data[offset : offset+uint64(bySize)]) // Zero out the space in the middle.
+	if hash := z.MemHash(ra.data[:offset]); hash != prevHash {
+		panic("We modified something")
+	}
 }
 
 func (ra *roaringArray) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
-	ra.data = fastExpand(ra.data, sz)
+	ra.fastExpand(sz)
 
 	c := container(toUint16Slice(ra.data[offset : offset+uint64(sz)]))
 	c.set(indexSize, uint16(sz))
@@ -134,16 +133,18 @@ func (ra roaringArray) getContainer(offset uint64) container {
 
 func (ra *roaringArray) Add(x uint64) {
 	key := x & mask
-	fmt.Printf("Add: %d. Key: %d\n", x, key)
-	offset, has := ra.getKey(key)
+	fmt.Printf("\nAdd: %d. Key: %d\n", x, key)
+	offset, has := ra.keys.getValue(key)
 	fmt.Printf("add: %d. offset: %d\n", x, offset)
 	if !has {
 		// We need to add a container.
-		offset = uint64(ra.newContainer(minSize))
-		fmt.Printf("offset: %d\n", offset)
-		ra.setKey(key, offset)
+		o := uint64(ra.newContainer(minSize))
+
+		// offset might have been updated by setKey.
+		offset = ra.setKey(key, o)
 		fmt.Printf("key has been set: %d\n", key)
 	}
+	fmt.Printf("got offset: %d\n", offset)
 	c := ra.getContainer(offset)
 
 	// TODO: Set the keys in there.
