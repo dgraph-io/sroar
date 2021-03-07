@@ -1,6 +1,7 @@
 package roar
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,7 +14,7 @@ func fill(c container, b uint16) {
 }
 
 func TestContainer(t *testing.T) {
-	ra := NewRoaringArray(1)
+	ra := NewRoaringArray(2)
 
 	offset := ra.newContainer(128)
 	c := ra.getContainer(offset)
@@ -60,15 +61,24 @@ func TestContainer(t *testing.T) {
 }
 
 func TestKey(t *testing.T) {
-	ra := NewRoaringArray(1)
+	ra := NewRoaringArray(2)
 	t.Logf("Num keys: %d\n", ra.keys.numKeys())
 
 	for i := 0; i < 10; i++ {
 		ra.Add(uint64(i))
 	}
+	fmt.Println()
+	fmt.Println()
+	fmt.Println()
 
-	off := ra.getKey(0)
+	off, has := ra.getKey(0)
+	require.True(t, has)
 	t.Logf("Got offset: %d\n", off)
 	c := ra.getContainer(off)
 	require.Equal(t, uint16(10), c.get(indexCardinality))
+
+	// Create 10 containers
+	for i := 0; i < 10; i++ {
+		ra.Add(uint64(i)<<16 + 1)
+	}
 }

@@ -16,9 +16,9 @@ func (n node) uint64(start int) uint64 { return n[start] }
 
 // func (n node) uint32(start int) uint32 { return *(*uint32)(unsafe.Pointer(&n[start])) }
 
-func keyOffset(i int) int          { return 2 * i }
-func valOffset(i int) int          { return 2*i + 1 }
-func (n node) numKeys() int        { return int(n.uint64(valOffset(0))) }
+func keyOffset(i int) int          { return 2 + 2*i }
+func valOffset(i int) int          { return 3 + 2*i }
+func (n node) numKeys() int        { return int(n.uint64(1)) }
 func (n node) maxKeys() int        { return len(n)/2 - 1 }
 func (n node) key(i int) uint64    { return n.uint64(keyOffset(i)) }
 func (n node) val(i int) uint64    { return n.uint64(valOffset(i)) }
@@ -29,8 +29,8 @@ func (n node) setAt(start int, k uint64) {
 }
 
 func (n node) setNumKeys(num int) {
-	idx := valOffset(0)
-	n[idx] = uint64(num)
+	// 1st index is used for storing the number of keys.
+	n[1] = uint64(num)
 }
 
 func (n node) maxKey() uint64 {
@@ -67,7 +67,7 @@ func (n node) search(k uint64) int {
 		return N
 	}
 	fmt.Printf("Size N: %d n: %d Want: %d\n", N, len(n), 2*N)
-	return int(simd.Search(n[:2*N], k))
+	return int(simd.Search(n[2:2*N], k))
 }
 
 func zeroOut(data []uint64) {
@@ -105,22 +105,30 @@ func (n node) compact(lo uint64) int {
 	return left
 }
 
-func (n node) get(k uint64) uint64 {
+// getValue returns the value corresponding to the key if found.
+func (n node) getValue(k uint64) (uint64, bool) {
 	idx := n.search(k)
+	fmt.Printf("getValue.idx: %d. numKeys: %d\n", idx, n.numKeys())
 	// key is not found
 	if idx == n.numKeys() {
-		return 0
+		return 0, false
 	}
 	if ki := n.key(idx); ki == k {
-		return n.val(idx)
+		fmt.Printf("ki: %d k: %d\n", ki, k)
+		return n.val(idx), true
+	} else {
+		fmt.Printf("ki: %d k: %d\n", ki, k)
 	}
-	return 0
+	return 0, false
 }
 
 // set returns true if it added a new key.
 func (n node) set(k, v uint64) (numAdded int) {
+	fmt.Printf("set k: %d v: %d\n", k, v)
 	idx := n.search(k)
+	fmt.Printf("0 idx: %d for key: %d\n", idx, k)
 	ki := n.key(idx)
+	fmt.Printf("idx: %d for key: %d. ki: %d\n", idx, k, ki)
 	if n.numKeys() == n.maxKeys() {
 		// This happens during split of non-root node, when we are updating the child pointer of
 		// right node. Hence, the key should already exist.
@@ -138,6 +146,7 @@ func (n node) set(k, v uint64) (numAdded int) {
 		numAdded = 1
 	}
 	if ki == 0 || ki >= k {
+		fmt.Printf("len n: %d\n", len(n))
 		n.setAt(keyOffset(idx), k)
 		n.setAt(valOffset(idx), v)
 		return

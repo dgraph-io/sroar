@@ -16,6 +16,8 @@ const (
 	indexSize        int = 1 // in bytes.
 	indexCardinality int = 2
 	indexUnused      int = 3
+
+	minSizeOfContainer = 8
 )
 
 // getSize returns the size of container in bytes. The way to calculate the uint16 data

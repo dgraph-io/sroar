@@ -21,19 +21,33 @@ type roaringArray struct {
 }
 
 func NewRoaringArray(numKeys int) *roaringArray {
+	if numKeys < 2 {
+		panic("Must contain at least two keys.")
+	}
 	ra := &roaringArray{
-		data: make([]byte, sizeInBytesU64(numKeys+2)),
+		// Each key must also keep an offset. So, we need to double the number of uint64s allocated.
+		// Plus, we need to make space for the first 2 uint64s to store the number of keys.
+		data: make([]byte, sizeInBytesU64(2*numKeys+2)),
 	}
 	ra.keys = toUint64Slice(ra.data[:len(ra.data)])
+
+	// Always generate a container for key = 0x00. Otherwise, node gets confused about whether a
+	// zero key is a new key or not.
+	offset := ra.newContainer(minSizeOfContainer)
+	ra.keys.setAt(3, offset) // First two are for num keys. index=2 -> 0 key. index=3 -> offset.
+	ra.keys.setNumKeys(1)
+
+	fmt.Printf("len keys: %d len data: %d\n", len(ra.keys), len(ra.data))
 	return ra
 }
 
 // getKey returns the offset for container corresponding to key k.
-func (ra *roaringArray) getKey(k uint64) uint64 {
-	return ra.keys.get(k)
+func (ra *roaringArray) getKey(k uint64) (uint64, bool) {
+	return ra.keys.getValue(k)
 }
 
 func (ra *roaringArray) setKey(k uint64, offset uint64) {
+	fmt.Printf("len of keys node: %d\n", len(ra.keys))
 	if num := ra.keys.set(k, offset); num == 0 {
 		// No new key was added. So, we can just return.
 		return
@@ -53,16 +67,26 @@ func (ra *roaringArray) setKey(k uint64, offset uint64) {
 	if bySize > math.MaxUint16 {
 		bySize = math.MaxInt16
 	}
+	for i := 0; i < len(ra.keys); i++ {
+		fmt.Printf("i: %d uint64: %d\n", i, ra.keys[i])
+	}
 	ra.scootRight(curSize, uint16(bySize))
+	fmt.Printf("Scoot done by size: %d curSize: %d\n", bySize, curSize)
 
 	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
+	for i := 0; i < len(ra.keys); i++ {
+		fmt.Printf("After i: %d uint64: %d\n", i, ra.keys[i])
+	}
 
 	// All containers have moved to the right by bySize bytes.
 	// Update their offsets.
 	n := ra.keys
-	for i := 1; i < n.maxKeys(); i++ {
-		if k := n.key(i); k > 0 {
-			val := n.val(i)
+	fmt.Printf("max keys: %d\n", n.maxKeys())
+	for i := 0; i < n.maxKeys(); i++ {
+		k := n.key(i)
+		val := n.val(i)
+		fmt.Printf("i: %d key: %d val: %d\n", i, k, val)
+		if val > 0 {
 			n.setAt(valOffset(i), val+uint64(bySize))
 		}
 	}
@@ -111,13 +135,14 @@ func (ra roaringArray) getContainer(offset uint64) container {
 func (ra *roaringArray) Add(x uint64) {
 	key := x & mask
 	fmt.Printf("Add: %d. Key: %d\n", x, key)
-	offset := ra.getKey(key)
+	offset, has := ra.getKey(key)
 	fmt.Printf("add: %d. offset: %d\n", x, offset)
-	if offset == 0 {
+	if !has {
 		// We need to add a container.
 		offset = uint64(ra.newContainer(minSize))
 		fmt.Printf("offset: %d\n", offset)
 		ra.setKey(key, offset)
+		fmt.Printf("key has been set: %d\n", key)
 	}
 	c := ra.getContainer(offset)
 
