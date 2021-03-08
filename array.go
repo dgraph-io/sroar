@@ -19,6 +19,17 @@ type roaringArray struct {
 	keys node
 }
 
+func FromBuffer(data []byte) *roaringArray {
+	if len(data) < 8 {
+		return nil
+	}
+	x := toUint64Slice(data[:8])[0]
+	return &roaringArray{
+		data: data,
+		keys: toUint64Slice(data[:x]),
+	}
+}
+
 func NewRoaringArray(numKeys int) *roaringArray {
 	if numKeys < 2 {
 		panic("Must contain at least two keys.")
@@ -29,6 +40,7 @@ func NewRoaringArray(numKeys int) *roaringArray {
 		data: make([]byte, sizeInBytesU64(2*numKeys+2)),
 	}
 	ra.keys = toUint64Slice(ra.data)
+	ra.keys.setAt(0, uint64(len(ra.data)))
 
 	// Always generate a container for key = 0x00. Otherwise, node gets confused about whether a
 	// zero key is a new key or not.
@@ -58,6 +70,7 @@ func (ra *roaringArray) setKey(k uint64, offset uint64) uint64 {
 
 	ra.scootRight(curSize, uint16(bySize))
 	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
+	ra.keys.setAt(0, uint64(curSize+bySize))
 
 	// All containers have moved to the right by bySize bytes.
 	// Update their offsets.
@@ -83,9 +96,11 @@ func (ra *roaringArray) fastExpand(bySize uint16) {
 func (ra *roaringArray) scootRight(offset uint64, bySize uint16) {
 	prevHash := z.MemHash(ra.data[:offset])
 	left := ra.data[offset:]
+
 	ra.fastExpand(bySize) // Expand the buffer.
 	right := ra.data[len(ra.data)-len(left):]
-	copy(right, left)                                 // Move data right.
+	copy(right, left) // Move data right.
+
 	z.Memclr(ra.data[offset : offset+uint64(bySize)]) // Zero out the space in the middle.
 	if hash := z.MemHash(ra.data[:offset]); hash != prevHash {
 		panic("We modified something")
@@ -106,8 +121,7 @@ func (ra *roaringArray) expandContainer(offset uint64, bySize uint16) {
 
 	// Select the portion to the right of the container, beyond its right boundary.
 	ra.scootRight(offset+uint64(sz), bySize)
-
-	// TODO: We need to update their offsets in keys.go.
+	ra.keys.updateOffsets(offset, uint64(bySize))
 
 	c := container(toUint16Slice(ra.data[offset : offset+uint64(sz+bySize)]))
 	c.set(indexSize, uint16(sz+bySize))
@@ -120,7 +134,7 @@ func (ra roaringArray) getContainer(offset uint64) container {
 	return c[:sz/2]
 }
 
-func (ra *roaringArray) Add(x uint64) {
+func (ra *roaringArray) Add(x uint64) bool {
 	key := x & mask
 	offset, has := ra.keys.getValue(key)
 	if !has {
@@ -131,8 +145,13 @@ func (ra *roaringArray) Add(x uint64) {
 		offset = ra.setKey(key, o)
 	}
 	c := ra.getContainer(offset)
-
-	// TODO: Set the keys in there.
-	num := c.get(indexCardinality)
-	c.set(indexCardinality, num+1)
+	if added := c.add(uint16(x)); !added {
+		return false
+	}
+	if c.isFull() {
+		// Double the size of container for now.
+		bySize := uint16(sizeInBytesU16(len(c)))
+		ra.expandContainer(offset, bySize)
+	}
+	return true
 }

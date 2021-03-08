@@ -6,7 +6,7 @@ import (
 )
 
 // node stores uint64 keys and the corresponding container offset in the buffer.
-// 0th index (keyOffset) is unused.
+// 0th index (keyOffset) is used for storing the size of node in bytes.
 // 1st index (valOffset) is used for storing the number of keys.
 type node []uint64
 
@@ -145,6 +145,14 @@ func (n node) set(k, v uint64) (numAdded int) {
 		return
 	}
 	panic("shouldn't reach here")
+}
+
+func (n node) updateOffsets(beyond, by uint64) {
+	for i := 0; i < n.maxKeys(); i++ {
+		if offset := n.val(i); offset > beyond {
+			n.setAt(valOffset(i), offset+by)
+		}
+	}
 }
 
 func (n node) iterate(fn func(node, int)) {

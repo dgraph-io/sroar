@@ -74,7 +74,7 @@ func TestContainer(t *testing.T) {
 
 func TestKey(t *testing.T) {
 	ra := NewRoaringArray(2)
-	for i := 0; i < 10; i++ {
+	for i := 1; i <= 10; i++ {
 		ra.Add(uint64(i))
 	}
 
@@ -109,5 +109,31 @@ func TestKey(t *testing.T) {
 		require.True(t, has)
 		c = ra.getContainer(offset)
 		require.Equal(t, uint16(1), c.get(indexCardinality))
+	}
+}
+
+func TestBulkAdd(t *testing.T) {
+	ra := NewRoaringArray(2)
+	for i := 1; i <= 1000; i++ {
+		ra.Add(uint64(i))
+	}
+
+	offset, has := ra.keys.getValue(0)
+	require.True(t, has)
+	c := ra.getContainer(offset)
+	for i := 1; i <= 1000; i++ {
+		require.Equal(t, uint16(i-1), c.find(uint16(i)))
+	}
+	t.Logf("Data size: %d\n", len(ra.data))
+
+	dup := make([]byte, len(ra.data))
+	copy(dup, ra.data)
+
+	ra2 := FromBuffer(dup)
+	offset, has = ra2.keys.getValue(0)
+	require.True(t, has)
+	c = ra2.getContainer(offset)
+	for i := 1; i <= 1000; i++ {
+		require.Equal(t, uint16(i-1), c.find(uint16(i)))
 	}
 }
