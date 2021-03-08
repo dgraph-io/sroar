@@ -98,4 +98,16 @@ func TestKey(t *testing.T) {
 		c = ra.getContainer(offset)
 		require.Equal(t, uint16(2), c.get(indexCardinality))
 	}
+
+	// Do add in the reverse order.
+	for i := 19; i >= 10; i-- {
+		ra.Add(uint64(i)<<16 + 2)
+	}
+
+	for i := 10; i < 20; i++ {
+		offset, has := ra.keys.getValue(uint64(i) << 16)
+		require.True(t, has)
+		c = ra.getContainer(offset)
+		require.Equal(t, uint16(1), c.get(indexCardinality))
+	}
 }
