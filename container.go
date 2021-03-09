@@ -9,7 +9,6 @@ import (
 // First 2 bytes are used for storing size of the container.
 // The container size cannot exceed the vicinity of 8KB. At 8KB, we switch from packed arrays to
 // bitmaps. We can fit the entire uint16 worth of bitmaps in 8KB (2^16 / 8 = 8 KB).
-type container []uint16
 
 const (
 	typeArray  uint16 = 0x00
@@ -20,7 +19,8 @@ const (
 	indexCardinality int = 2
 	indexUnused      int = 3
 
-	minSizeOfContainer = 10
+	minSizeOfContainer = 8 + 2    // 2 bytes for allowing one uint16 to be added.
+	maxSizeOfContainer = 8 + 8192 // 8192 for storing bitmap container.
 	startIdx           = uint16(4)
 )
 
@@ -34,25 +34,18 @@ func setSize(data []byte, sz uint16) {
 	x := toUint16Slice(data[:2])
 	x[0] = sz
 }
-
-func (c container) set(index int, t uint16) {
-	c[index] = t
+func dataAt(data []uint16, i int) uint16 {
+	return data[int(startIdx)+i]
 }
 
-func (c container) get(index int) uint16 {
-	return c[index]
-}
-
-func (c container) data() []uint16 {
-	return c[startIdx:]
-}
+type packedContainer []uint16
 
 // find returns the index of the first element >= x.
 // The index is based on data portion of the container, ignoring startIdx.
 // If the element > than all elements present, then N is returned where N = cardinality of the
 // container.
-func (c container) find(x uint16) uint16 {
-	N := c.get(indexCardinality)
+func (c packedContainer) find(x uint16) uint16 {
+	N := c[indexCardinality]
 	for i := startIdx; i < startIdx+N; i++ {
 		if len(c) <= int(i) {
 			fmt.Printf("N: %d i: %d\n", N, i)
@@ -64,10 +57,19 @@ func (c container) find(x uint16) uint16 {
 	}
 	return N
 }
-
-func (c container) add(x uint16) bool {
+func (c packedContainer) has(x uint16) bool {
+	N := c[indexCardinality]
 	idx := c.find(x)
-	N := c.get(indexCardinality)
+	fmt.Printf("has for %d idx: %d\n", x, idx)
+	if idx == N {
+		return false
+	}
+	return c[startIdx+idx] == x
+}
+
+func (c packedContainer) add(x uint16) bool {
+	idx := c.find(x)
+	N := c[indexCardinality]
 	offset := startIdx + idx
 	if c[offset] == x {
 		return false
@@ -78,28 +80,61 @@ func (c container) add(x uint16) bool {
 		copy(c[offset+1:], c[offset:])
 	}
 	c[offset] = x
-	c.set(indexCardinality, N+1)
-	if c.get(indexCardinality) <= N {
-		panic(fmt.Sprintf("Got Cardinality: %d\n", N))
-	}
+	c[indexCardinality] = N + 1
 	return true
 }
 
-func (c container) isFull() bool {
-	N := c.get(indexCardinality)
+func (c packedContainer) isFull() bool {
+	N := c[indexCardinality]
 	return int(N) >= len(c)-4
 }
 
-func (c container) all() []uint16 {
-	N := c.get(indexCardinality)
+func (c packedContainer) all() []uint16 {
+	N := c[indexCardinality]
 	return c[startIdx : startIdx+N]
 }
 
-func (c container) String() string {
+func (c packedContainer) String() string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Size: %d\n", len(c)*2))
-	for i, val := range c.data() {
+	b.WriteString(fmt.Sprintf("Size: %d\n", c[0]))
+	for i, val := range c[4:] {
 		b.WriteString(fmt.Sprintf("%d: %d\n", i, val))
 	}
 	return b.String()
+}
+
+type bitmapContainer []uint16
+
+var bitmapMask []uint16
+
+func init() {
+	bitmapMask = make([]uint16, 16)
+	for i := 0; i < 16; i++ {
+		bitmapMask[i] = 1 << (15 - i)
+	}
+}
+
+func (b bitmapContainer) add(x uint16) bool {
+	idx := x / 16
+	pos := x % 16
+
+	if has := b[4+idx] & bitmapMask[pos]; has > 0 {
+		return false
+	}
+
+	b[4+idx] |= bitmapMask[pos]
+	b[indexCardinality] += 1
+	return true
+}
+
+func (b bitmapContainer) has(x uint16) bool {
+	idx := x / 16
+	pos := x % 16
+
+	has := b[4+idx] & bitmapMask[pos]
+	return has > 0
+}
+
+func (b bitmapContainer) isFull() bool {
+	return false
 }

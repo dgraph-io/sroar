@@ -1,7 +1,6 @@
 package roar
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/dgraph-io/ristretto/z"
@@ -120,20 +119,36 @@ func (ra *roaringArray) expandContainer(offset uint64) {
 	if sz == 0 {
 		panic("Container size should NOT be zero")
 	}
+	bySize := sz
 	if sz >= 4096 {
-		panic("Switch to a bitmap container")
+		bySize = maxSizeOfContainer - sz
 	}
-	fmt.Printf("expandContainer. offset: %d bySize: %d\n", offset, sz)
+	// fmt.Printf("expandContainer. offset: %d bySize: %d\n", offset, sz)
 
 	// Select the portion to the right of the container, beyond its right boundary.
-	ra.scootRight(offset+uint64(sz), sz)
+	ra.scootRight(offset+uint64(sz), bySize)
 	ra.keys.updateOffsets(offset, uint64(sz))
 
-	setSize(ra.data[offset:], 2*sz)
-	fmt.Printf("container offset: %d size: %d\n", offset, getSize(ra.data[offset:]))
+	if sz < 4096 {
+		setSize(ra.data[offset:], sz+bySize)
+
+	} else {
+		// Convert to bitmap container.
+		buf := make([]byte, maxSizeOfContainer)
+		b := bitmapContainer(toUint16Slice(buf))
+		b[indexSize] = maxSizeOfContainer
+		b[indexType] = typeBitmap
+
+		src := packedContainer(ra.getContainer(offset))
+		for _, x := range src.all() {
+			b.add(x)
+		}
+		assert(copy(ra.data[offset:], buf) == maxSizeOfContainer)
+	}
+	// fmt.Printf("container offset: %d size: %d\n", offset, getSize(ra.data[offset:]))
 }
 
-func (ra roaringArray) getContainer(offset uint64) container {
+func (ra roaringArray) getContainer(offset uint64) []uint16 {
 	data := ra.data[offset:]
 	sz := getSize(data)
 	return toUint16Slice(data[:sz])
@@ -150,12 +165,43 @@ func (ra *roaringArray) Add(x uint64) bool {
 		offset = ra.setKey(key, o)
 	}
 	c := ra.getContainer(offset)
-	if added := c.add(uint16(x)); !added {
-		return false
-	}
-	if c.isFull() {
-		// Double the size of container for now.
-		ra.expandContainer(offset)
+	switch c[indexType] {
+	case typeArray:
+		p := packedContainer(c)
+		if added := p.add(uint16(x)); !added {
+			return false
+		}
+		if p.isFull() {
+			// Double the size of container for now.
+			ra.expandContainer(offset)
+		}
+	case typeBitmap:
+		b := bitmapContainer(c)
+		return b.add(uint16(x))
 	}
 	return true
+}
+
+func (ra *roaringArray) Has(x uint64) bool {
+	key := x & mask
+	offset, has := ra.keys.getValue(key)
+	if !has {
+		return false
+	}
+	y := uint16(x)
+	if y == 0 {
+		// Existence of container is a proof that x exists.
+		return true
+	}
+
+	c := ra.getContainer(offset)
+	switch c[indexType] {
+	case typeArray:
+		p := packedContainer(c)
+		return p.has(y)
+	case typeBitmap:
+		b := bitmapContainer(c)
+		return b.has(y)
+	}
+	return false
 }
