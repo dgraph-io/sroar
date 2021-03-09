@@ -30,7 +30,7 @@ func TestContainer(t *testing.T) {
 
 	offset := ra.newContainer(128)
 	c := ra.getContainer(offset)
-	require.Equal(t, uint16(128), c.get(indexSize))
+	require.Equal(t, uint16(128), getSize(ra.data[offset:]))
 	require.Equal(t, uint16(0), c.get(indexCardinality))
 
 	fill(c, 0xFF)
@@ -44,16 +44,16 @@ func TestContainer(t *testing.T) {
 
 	offset2 := ra.newContainer(64) // Add a second container.
 	c2 := ra.getContainer(offset2)
-	require.Equal(t, uint16(64), c2.get(indexSize))
+	require.Equal(t, uint32(64), getSize(ra.data[offset2:]))
 	fill(c2, 0xEE)
 
 	// Expand the first container. This would push out the second container, so update its offset.
-	ra.expandContainer(offset, 128)
+	ra.expandContainer(offset)
 	offset2 += 128
 
 	// Check if the second container is correct.
 	c2 = ra.getContainer(offset2)
-	require.Equal(t, uint16(64), c2.get(indexSize))
+	require.Equal(t, uint32(64), getSize(ra.data[offset2:]))
 	require.Equal(t, 28, len(c2.data()))
 	for _, val := range c2.data() {
 		require.Equal(t, uint16(0xEE), val)
@@ -61,7 +61,7 @@ func TestContainer(t *testing.T) {
 
 	// Check if the first container is correct.
 	c = ra.getContainer(offset)
-	require.Equal(t, uint16(256), c.get(indexSize))
+	require.Equal(t, uint16(256), getSize(ra.data[offset:]))
 	require.Equal(t, 124, len(c.data()))
 	for i := range c.data() {
 		if i < 60 {
@@ -114,14 +114,16 @@ func TestKey(t *testing.T) {
 
 func TestBulkAdd(t *testing.T) {
 	ra := NewRoaringArray(2)
-	for i := 1; i <= 1000; i++ {
+
+	max := 10 << 16
+	for i := 1; i <= max; i++ {
 		ra.Add(uint64(i))
 	}
 
 	offset, has := ra.keys.getValue(0)
 	require.True(t, has)
 	c := ra.getContainer(offset)
-	for i := 1; i <= 1000; i++ {
+	for i := 1; i <= max; i++ {
 		require.Equal(t, uint16(i-1), c.find(uint16(i)))
 	}
 	t.Logf("Data size: %d\n", len(ra.data))
@@ -135,5 +137,17 @@ func TestBulkAdd(t *testing.T) {
 	c = ra2.getContainer(offset)
 	for i := 1; i <= 1000; i++ {
 		require.Equal(t, uint16(i-1), c.find(uint16(i)))
+	}
+}
+
+func TestUint16(t *testing.T) {
+	var x uint16
+	for i := 0; i < 100000; i++ {
+		prev := x
+		x++
+		if x <= prev {
+			// This triggers when prev = 0xFFFF.
+			require.Failf(t, "x<=prev", "x %d <= prev %d", x, prev)
+		}
 	}
 }

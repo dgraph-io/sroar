@@ -6,27 +6,33 @@ import (
 )
 
 // container uses extra 8 bytes in the front as header.
+// First 2 bytes are used for storing size of the container.
+// The container size cannot exceed the vicinity of 8KB. At 8KB, we switch from packed arrays to
+// bitmaps. We can fit the entire uint16 worth of bitmaps in 8KB (2^16 / 8 = 8 KB).
 type container []uint16
 
 const (
 	typeArray  uint16 = 0x00
 	typeBitmap uint16 = 0x01
 
-	indexType        int = 0
-	indexSize        int = 1 // in bytes.
+	indexSize        int = 0
+	indexType        int = 1
 	indexCardinality int = 2
 	indexUnused      int = 3
 
 	minSizeOfContainer = 10
-
-	startIdx = uint16(4)
+	startIdx           = uint16(4)
 )
 
 // getSize returns the size of container in bytes. The way to calculate the uint16 data
 // size is (byte size/2) - 4.
 func getSize(data []byte) uint16 {
-	s := toUint16Slice(data)
-	return s[indexSize]
+	x := toUint16Slice(data[:2])
+	return x[0]
+}
+func setSize(data []byte, sz uint16) {
+	x := toUint16Slice(data[:2])
+	x[0] = sz
 }
 
 func (c container) set(index int, t uint16) {
@@ -48,6 +54,10 @@ func (c container) data() []uint16 {
 func (c container) find(x uint16) uint16 {
 	N := c.get(indexCardinality)
 	for i := startIdx; i < startIdx+N; i++ {
+		if len(c) <= int(i) {
+			fmt.Printf("N: %d i: %d\n", N, i)
+			panic(fmt.Sprintf("find: %d len(c) %d <= i %d\n", x, len(c), i))
+		}
 		if c[i] >= x {
 			return i - startIdx
 		}
@@ -69,6 +79,9 @@ func (c container) add(x uint16) bool {
 	}
 	c[offset] = x
 	c.set(indexCardinality, N+1)
+	if c.get(indexCardinality) <= N {
+		panic(fmt.Sprintf("Got Cardinality: %d\n", N))
+	}
 	return true
 }
 
@@ -84,7 +97,7 @@ func (c container) all() []uint16 {
 
 func (c container) String() string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Size: %d\n", c.get(indexSize)))
+	b.WriteString(fmt.Sprintf("Size: %d\n", len(c)*2))
 	for i, val := range c.data() {
 		b.WriteString(fmt.Sprintf("%d: %d\n", i, val))
 	}

@@ -28,8 +28,8 @@ func check2(_ interface{}, err error) {
 // or modified while you hold the returned slince.
 ////
 func toUint16Slice(b []byte) (result []uint16) { // here we create a new slice holder
-	if len(b)%2 != 0 {
-		panic("Slice size should be divisible by 2")
+	if len(b) == 0 {
+		return nil
 	}
 	// reference: https://go101.org/article/unsafe.html
 
@@ -39,6 +39,18 @@ func toUint16Slice(b []byte) (result []uint16) { // here we create a new slice h
 	hdr.Cap = hdr.Len
 	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
 	return u16s
+}
+
+func toUint32Slice(b []byte) (result []uint32) {
+	if len(b) == 0 {
+		return nil
+	}
+	var u32s []uint32
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u32s))
+	hdr.Len = len(b) / 4
+	hdr.Cap = hdr.Len
+	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
+	return u32s
 }
 
 // BytesToU32Slice converts the given byte slice to uint32 slice

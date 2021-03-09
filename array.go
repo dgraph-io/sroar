@@ -1,6 +1,7 @@
 package roar
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/dgraph-io/ristretto/z"
@@ -110,28 +111,32 @@ func (ra *roaringArray) scootRight(offset uint64, bySize uint16) {
 func (ra *roaringArray) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
 	ra.fastExpand(sz)
-
-	c := container(toUint16Slice(ra.data[offset : offset+uint64(sz)]))
-	c.set(indexSize, uint16(sz))
+	setSize(ra.data[offset:], sz)
 	return offset
 }
 
-func (ra *roaringArray) expandContainer(offset uint64, bySize uint16) {
-	sz := getSize(ra.data[offset : offset+4])
+func (ra *roaringArray) expandContainer(offset uint64) {
+	sz := getSize(ra.data[offset : offset+2])
+	if sz == 0 {
+		panic("Container size should NOT be zero")
+	}
+	if sz >= 4096 {
+		panic("Switch to a bitmap container")
+	}
+	fmt.Printf("expandContainer. offset: %d bySize: %d\n", offset, sz)
 
 	// Select the portion to the right of the container, beyond its right boundary.
-	ra.scootRight(offset+uint64(sz), bySize)
-	ra.keys.updateOffsets(offset, uint64(bySize))
+	ra.scootRight(offset+uint64(sz), sz)
+	ra.keys.updateOffsets(offset, uint64(sz))
 
-	c := container(toUint16Slice(ra.data[offset : offset+uint64(sz+bySize)]))
-	c.set(indexSize, uint16(sz+bySize))
+	setSize(ra.data[offset:], 2*sz)
+	fmt.Printf("container offset: %d size: %d\n", offset, getSize(ra.data[offset:]))
 }
 
 func (ra roaringArray) getContainer(offset uint64) container {
 	data := ra.data[offset:]
-	c := container(toUint16Slice(data))
-	sz := c.get(indexSize)
-	return c[:sz/2]
+	sz := getSize(data)
+	return toUint16Slice(data[:sz])
 }
 
 func (ra *roaringArray) Add(x uint64) bool {
@@ -150,8 +155,7 @@ func (ra *roaringArray) Add(x uint64) bool {
 	}
 	if c.isFull() {
 		// Double the size of container for now.
-		bySize := uint16(sizeInBytesU16(len(c)))
-		ra.expandContainer(offset, bySize)
+		ra.expandContainer(offset)
 	}
 	return true
 }
