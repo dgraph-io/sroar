@@ -2,6 +2,7 @@ package roar
 
 import (
 	"fmt"
+	"math/bits"
 	"strings"
 )
 
@@ -38,13 +39,13 @@ func dataAt(data []uint16, i int) uint16 {
 	return data[int(startIdx)+i]
 }
 
-type packedContainer []uint16
+type packed []uint16
 
 // find returns the index of the first element >= x.
 // The index is based on data portion of the container, ignoring startIdx.
 // If the element > than all elements present, then N is returned where N = cardinality of the
 // container.
-func (c packedContainer) find(x uint16) uint16 {
+func (c packed) find(x uint16) uint16 {
 	N := c[indexCardinality]
 	for i := startIdx; i < startIdx+N; i++ {
 		if len(c) <= int(i) {
@@ -57,7 +58,7 @@ func (c packedContainer) find(x uint16) uint16 {
 	}
 	return N
 }
-func (c packedContainer) has(x uint16) bool {
+func (c packed) has(x uint16) bool {
 	N := c[indexCardinality]
 	idx := c.find(x)
 	fmt.Printf("has for %d idx: %d\n", x, idx)
@@ -67,7 +68,7 @@ func (c packedContainer) has(x uint16) bool {
 	return c[startIdx+idx] == x
 }
 
-func (c packedContainer) add(x uint16) bool {
+func (c packed) add(x uint16) bool {
 	idx := c.find(x)
 	N := c[indexCardinality]
 	offset := startIdx + idx
@@ -84,17 +85,40 @@ func (c packedContainer) add(x uint16) bool {
 	return true
 }
 
-func (c packedContainer) isFull() bool {
+// TODO: Figure out how memory allocation would work in these situations. Perhaps use allocator here?
+func (c packed) and(other packed) []uint16 {
+	nc := c[indexCardinality]
+	no := other[indexCardinality]
+
+	setc := c[startIdx : startIdx+nc]
+	seto := other[startIdx : startIdx+no]
+
+	out := make([]uint16, startIdx+min16(nc, no))
+	num := uint16(intersection2by2(setc, seto, out[startIdx:]))
+
+	// Truncate out to how many values were found.
+	out = out[:startIdx+num+1]
+	out[indexType] = typeArray
+	out[indexSize] = uint16(sizeInBytesU16(len(out)))
+	out[indexCardinality] = uint16(num)
+	return out
+}
+
+// TODO: Look at bitValue. It's doing a branchless iteration.
+func (c packed) andBitmap(other bitmap) []uint16 {
+}
+
+func (c packed) isFull() bool {
 	N := c[indexCardinality]
 	return int(N) >= len(c)-4
 }
 
-func (c packedContainer) all() []uint16 {
+func (c packed) all() []uint16 {
 	N := c[indexCardinality]
 	return c[startIdx : startIdx+N]
 }
 
-func (c packedContainer) String() string {
+func (c packed) String() string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Size: %d\n", c[0]))
 	for i, val := range c[4:] {
@@ -103,7 +127,7 @@ func (c packedContainer) String() string {
 	return b.String()
 }
 
-type bitmapContainer []uint16
+type bitmap []uint16
 
 var bitmapMask []uint16
 
@@ -114,7 +138,7 @@ func init() {
 	}
 }
 
-func (b bitmapContainer) add(x uint16) bool {
+func (b bitmap) add(x uint16) bool {
 	idx := x / 16
 	pos := x % 16
 
@@ -127,7 +151,7 @@ func (b bitmapContainer) add(x uint16) bool {
 	return true
 }
 
-func (b bitmapContainer) has(x uint16) bool {
+func (b bitmap) has(x uint16) bool {
 	idx := x / 16
 	pos := x % 16
 
@@ -135,6 +159,20 @@ func (b bitmapContainer) has(x uint16) bool {
 	return has > 0
 }
 
-func (b bitmapContainer) isFull() bool {
+// TODO: This can perhaps be using SIMD instructions.
+func (b bitmap) and(other bitmap) []uint16 {
+	out := make([]uint16, maxSizeOfContainer)
+	out[indexSize] = maxSizeOfContainer
+	out[indexType] = typeBitmap
+	var num int
+	for i := 4; i < len(b); i++ {
+		out[i] = b[i] & other[i]
+		num += bits.OnesCount16(out[i])
+	}
+	out[indexCardinality] = uint16(num)
+	return out
+}
+
+func (b bitmap) isFull() bool {
 	return false
 }

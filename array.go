@@ -135,11 +135,11 @@ func (ra *roaringArray) expandContainer(offset uint64) {
 	} else {
 		// Convert to bitmap container.
 		buf := make([]byte, maxSizeOfContainer)
-		b := bitmapContainer(toUint16Slice(buf))
+		b := bitmap(toUint16Slice(buf))
 		b[indexSize] = maxSizeOfContainer
 		b[indexType] = typeBitmap
 
-		src := packedContainer(ra.getContainer(offset))
+		src := packed(ra.getContainer(offset))
 		for _, x := range src.all() {
 			b.add(x)
 		}
@@ -167,7 +167,7 @@ func (ra *roaringArray) Add(x uint64) bool {
 	c := ra.getContainer(offset)
 	switch c[indexType] {
 	case typeArray:
-		p := packedContainer(c)
+		p := packed(c)
 		if added := p.add(uint16(x)); !added {
 			return false
 		}
@@ -176,7 +176,7 @@ func (ra *roaringArray) Add(x uint64) bool {
 			ra.expandContainer(offset)
 		}
 	case typeBitmap:
-		b := bitmapContainer(c)
+		b := bitmap(c)
 		return b.add(uint16(x))
 	}
 	return true
@@ -197,10 +197,10 @@ func (ra *roaringArray) Has(x uint64) bool {
 	c := ra.getContainer(offset)
 	switch c[indexType] {
 	case typeArray:
-		p := packedContainer(c)
+		p := packed(c)
 		return p.has(y)
 	case typeBitmap:
-		b := bitmapContainer(c)
+		b := bitmap(c)
 		return b.has(y)
 	}
 	return false
