@@ -14,27 +14,30 @@ var (
 const mask = uint64(0xFFFFFFFFFFFF0000)
 
 // First 8 bytes should contain the length of the array.
-type roaringArray struct {
+type Bitmap struct {
 	data []byte
 	keys node
 }
 
-func FromBuffer(data []byte) *roaringArray {
+func FromBuffer(data []byte) *Bitmap {
 	if len(data) < 8 {
 		return nil
 	}
 	x := toUint64Slice(data[:8])[0]
-	return &roaringArray{
+	return &Bitmap{
 		data: data,
 		keys: toUint64Slice(data[:x]),
 	}
 }
 
-func NewRoaringArray(numKeys int) *roaringArray {
+func NewBitmap() *Bitmap {
+	return NewBitmapWith(2)
+}
+func NewBitmapWith(numKeys int) *Bitmap {
 	if numKeys < 2 {
 		panic("Must contain at least two keys.")
 	}
-	ra := &roaringArray{
+	ra := &Bitmap{
 		// Each key must also keep an offset. So, we need to double the number of uint64s allocated.
 		// Plus, we need to make space for the first 2 uint64s to store the number of keys.
 		data: make([]byte, sizeInBytesU64(2*numKeys+2)),
@@ -51,7 +54,8 @@ func NewRoaringArray(numKeys int) *roaringArray {
 	return ra
 }
 
-func (ra *roaringArray) setKey(k uint64, offset uint64) uint64 {
+// setKey sets a key and container offset.
+func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	if num := ra.keys.set(k, offset); num == 0 {
 		// No new key was added. So, we can just return.
 		return offset
@@ -84,7 +88,7 @@ func (ra *roaringArray) setKey(k uint64, offset uint64) uint64 {
 	return offset + bySize
 }
 
-func (ra *roaringArray) fastExpand(bySize uint16) {
+func (ra *Bitmap) fastExpand(bySize uint16) {
 	prev := len(ra.keys) * 8
 	ra.data = append(ra.data, empty[:bySize]...)
 
@@ -93,7 +97,7 @@ func (ra *roaringArray) fastExpand(bySize uint16) {
 	ra.keys = toUint64Slice(ra.data[:prev])
 }
 
-func (ra *roaringArray) scootRight(offset uint64, bySize uint16) {
+func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 	prevHash := z.MemHash(ra.data[:offset])
 	left := ra.data[offset:]
 
@@ -107,14 +111,14 @@ func (ra *roaringArray) scootRight(offset uint64, bySize uint16) {
 	}
 }
 
-func (ra *roaringArray) newContainer(sz uint16) uint64 {
+func (ra *Bitmap) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
 	ra.fastExpand(sz)
 	setSize(ra.data[offset:], sz)
 	return offset
 }
 
-func (ra *roaringArray) expandContainer(offset uint64) {
+func (ra *Bitmap) expandContainer(offset uint64) {
 	sz := getSize(ra.data[offset : offset+2])
 	if sz == 0 {
 		panic("Container size should NOT be zero")
@@ -148,13 +152,13 @@ func (ra *roaringArray) expandContainer(offset uint64) {
 	// fmt.Printf("container offset: %d size: %d\n", offset, getSize(ra.data[offset:]))
 }
 
-func (ra roaringArray) getContainer(offset uint64) []uint16 {
+func (ra Bitmap) getContainer(offset uint64) []uint16 {
 	data := ra.data[offset:]
 	sz := getSize(data)
 	return toUint16Slice(data[:sz])
 }
 
-func (ra *roaringArray) Add(x uint64) bool {
+func (ra *Bitmap) Add(x uint64) bool {
 	key := x & mask
 	offset, has := ra.keys.getValue(key)
 	if !has {
@@ -182,7 +186,7 @@ func (ra *roaringArray) Add(x uint64) bool {
 	return true
 }
 
-func (ra *roaringArray) Has(x uint64) bool {
+func (ra *Bitmap) Has(x uint64) bool {
 	key := x & mask
 	offset, has := ra.keys.getValue(key)
 	if !has {
@@ -204,4 +208,69 @@ func (ra *roaringArray) Has(x uint64) bool {
 		return b.has(y)
 	}
 	return false
+}
+
+func containerAnd(ac, bc []uint16) []uint16 {
+	at := ac[indexType]
+	bt := bc[indexType]
+
+	if at == typeArray && bt == typeArray {
+		left := packed(ac)
+		right := packed(bc)
+		return left.and(right)
+	}
+	if at == typeArray && bt == typeBitmap {
+		left := packed(ac)
+		right := bitmap(bc)
+		return left.andBitmap(right)
+	}
+	if at == typeBitmap && bt == typeArray {
+		left := bitmap(ac)
+		right := packed(bc)
+		return right.andBitmap(left)
+	}
+	if at == typeBitmap && bt == typeBitmap {
+		left := bitmap(ac)
+		right := bitmap(bc)
+		return left.and(right)
+	}
+	panic("containerAnd: We should not reach here")
+}
+
+func And(a, b *Bitmap) *Bitmap {
+	ai, an := 0, a.keys.numKeys()
+	bi, bn := 0, b.keys.numKeys()
+
+	res := NewBitmap()
+	for ai < an && bi < bn {
+		ak := a.keys.key(ai)
+		bk := a.keys.key(bi)
+		if ak == bk {
+			// Do the intersection.
+			off, has := a.keys.getValue(ak)
+			assert(has)
+			ac := a.getContainer(off)
+
+			off, has = b.keys.getValue(bk)
+			assert(has)
+			bc := b.getContainer(off)
+
+			outc := containerAnd(ac, bc)
+			if outc[indexCardinality] > 0 {
+				outb := toByteSlice(containerAnd(ac, bc))
+				offset := res.newContainer(uint16(len(outb)))
+				copy(res.data[offset:], outb)
+				res.setKey(ak, offset)
+			}
+			ai++
+			bi++
+		} else if ak < bk {
+			ai++
+			ak = a.keys.key(ai)
+		} else {
+			bi++
+			bk = b.keys.key(bi)
+		}
+	}
+	return res
 }

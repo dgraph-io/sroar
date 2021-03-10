@@ -26,7 +26,7 @@ func TestModify(t *testing.T) {
 }
 
 func TestContainer(t *testing.T) {
-	ra := NewRoaringArray(2)
+	ra := NewBitmap()
 
 	offset := ra.newContainer(128)
 	c := ra.getContainer(offset)
@@ -73,7 +73,7 @@ func TestContainer(t *testing.T) {
 }
 
 func TestKey(t *testing.T) {
-	ra := NewRoaringArray(2)
+	ra := NewBitmap()
 	for i := 1; i <= 10; i++ {
 		ra.Add(uint64(i))
 	}
@@ -113,7 +113,7 @@ func TestKey(t *testing.T) {
 }
 
 func TestBulkAdd(t *testing.T) {
-	ra := NewRoaringArray(2)
+	ra := NewBitmap()
 
 	max := uint64(10 << 16)
 	for i := uint64(1); i <= max; i++ {

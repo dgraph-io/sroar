@@ -56,14 +56,27 @@ func (n node) isFull() bool {
 // Search returns the index of a smallest key >= k in a node.
 func (n node) search(k uint64) int {
 	N := n.numKeys()
-	// if N < 4 {
-	for i := 0; i < N; i++ {
-		ki := n.key(i)
+	lo, hi := 0, N
+	for lo+16 <= hi {
+		mid := (lo + hi) / 2
+		ki := n.key(mid)
+
+		if ki < k {
+			lo = mid + 1
+		} else if ki > k {
+			hi = mid - 1
+		} else {
+			return mid
+		}
+	}
+	for ; lo <= hi; lo++ {
+		ki := n.key(lo)
 		if ki >= k {
-			return i
+			return lo
 		}
 	}
 	return N
+	// if N < 4 {
 	// simd.Search has a bug which causes this to return index 11 when it should be returning index
 	// 9.
 	// }

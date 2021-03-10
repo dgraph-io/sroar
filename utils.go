@@ -22,6 +22,20 @@ func check2(_ interface{}, err error) {
 	check(err)
 }
 
+func toByteSlice(b []uint16) []byte {
+	if len(b) == 0 {
+		return nil
+	}
+	// reference: https://go101.org/article/unsafe.html
+
+	var bs []byte
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&bs))
+	hdr.Len = len(b) * 2
+	hdr.Cap = hdr.Len
+	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
+	return bs
+}
+
 // These methods (byteSliceAsUint16Slice,...) do not make copies,
 // they are pointer-based (unsafe). The caller is responsible to
 // ensure that the input slice does not get garbage collected, deleted

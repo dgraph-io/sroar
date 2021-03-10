@@ -104,8 +104,26 @@ func (c packed) and(other packed) []uint16 {
 	return out
 }
 
-// TODO: Look at bitValue. It's doing a branchless iteration.
 func (c packed) andBitmap(other bitmap) []uint16 {
+	out := make([]uint16, c[indexSize]/2)
+	out[indexType] = typeArray
+
+	pos := startIdx
+	N := c[indexCardinality]
+	for i := uint16(0); i < N; i++ {
+		v := c[startIdx+i]
+		out[pos] = v
+		pos += other.bitValue(v)
+	}
+
+	if cap(out) == int(pos) {
+		out = append(out, 0)
+	}
+	// Ensure we have at least one empty slot at the end.
+	res := out[:pos+1]
+	res[indexSize] = uint16(len(res) * 2)
+	res[indexCardinality] = pos
+	return res
 }
 
 func (c packed) isFull() bool {
@@ -171,6 +189,14 @@ func (b bitmap) and(other bitmap) []uint16 {
 	}
 	out[indexCardinality] = uint16(num)
 	return out
+}
+
+// bitValue returns a 0 or a 1 depending upon whether x is present in the bitmap, where 1 means
+// present and 0 means absent.
+func (b bitmap) bitValue(x uint16) uint16 {
+	idx := x / 16
+	pos := x % 16
+	return (b[4+idx] >> pos) & 1
 }
 
 func (b bitmap) isFull() bool {
