@@ -112,6 +112,13 @@ func TestKey(t *testing.T) {
 	}
 }
 
+func TestEdgeCase(t *testing.T) {
+	ra := NewBitmap()
+
+	require.True(t, ra.Add(65536))
+	require.True(t, ra.Has(65536))
+}
+
 func TestBulkAdd(t *testing.T) {
 	ra := NewBitmap()
 
@@ -124,7 +131,7 @@ func TestBulkAdd(t *testing.T) {
 	_, has := ra.keys.getValue(0)
 	require.True(t, has)
 	for i := uint64(1); i <= max; i++ {
-		require.True(t, ra.Has(i))
+		require.Truef(t, ra.Has(i), "i=%d", i)
 	}
 	t.Logf("Data size: %d\n", len(ra.data))
 

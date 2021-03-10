@@ -193,10 +193,6 @@ func (ra *Bitmap) Has(x uint64) bool {
 		return false
 	}
 	y := uint16(x)
-	if y == 0 {
-		// Existence of container is a proof that x exists.
-		return true
-	}
 
 	c := ra.getContainer(offset)
 	switch c[indexType] {

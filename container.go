@@ -61,7 +61,6 @@ func (c packed) find(x uint16) uint16 {
 func (c packed) has(x uint16) bool {
 	N := c[indexCardinality]
 	idx := c.find(x)
-	fmt.Printf("has for %d idx: %d\n", x, idx)
 	if idx == N {
 		return false
 	}
@@ -72,16 +71,16 @@ func (c packed) add(x uint16) bool {
 	idx := c.find(x)
 	N := c[indexCardinality]
 	offset := startIdx + idx
-	if c[offset] == x {
-		return false
-	}
 
 	if idx < N {
+		if c[offset] == x {
+			return false
+		}
 		// The entry at offset is the first entry, which is greater than x. Move it to the right.
 		copy(c[offset+1:], c[offset:])
 	}
 	c[offset] = x
-	c[indexCardinality] = N + 1
+	c[indexCardinality] += 1
 	return true
 }
 
