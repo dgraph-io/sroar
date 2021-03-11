@@ -16,10 +16,10 @@ func (n node) uint64(start int) uint64 { return n[start] }
 
 func keyOffset(i int) int          { return 2 + 2*i }
 func valOffset(i int) int          { return 3 + 2*i }
-func (n node) numKeys() int        { return int(n.uint64(1)) }
+func (n node) numKeys() int        { return int(n[1]) }
 func (n node) maxKeys() int        { return len(n)/2 - 1 }
-func (n node) key(i int) uint64    { return n.uint64(keyOffset(i)) }
-func (n node) val(i int) uint64    { return n.uint64(valOffset(i)) }
+func (n node) key(i int) uint64    { return n[keyOffset(i)] }
+func (n node) val(i int) uint64    { return n[valOffset(i)] }
 func (n node) data(i int) []uint64 { return n[keyOffset(i):keyOffset(i+1)] }
 
 func (n node) setAt(start int, k uint64) {

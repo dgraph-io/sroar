@@ -23,11 +23,7 @@ func check2(_ interface{}, err error) {
 }
 
 func toByteSlice(b []uint16) []byte {
-	if len(b) == 0 {
-		return nil
-	}
 	// reference: https://go101.org/article/unsafe.html
-
 	var bs []byte
 	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&bs))
 	hdr.Len = len(b) * 2
@@ -41,12 +37,7 @@ func toByteSlice(b []uint16) []byte {
 // ensure that the input slice does not get garbage collected, deleted
 // or modified while you hold the returned slince.
 ////
-func toUint16Slice(b []byte) (result []uint16) { // here we create a new slice holder
-	if len(b) == 0 {
-		return nil
-	}
-	// reference: https://go101.org/article/unsafe.html
-
+func toUint16Slice(b []byte) (result []uint16) {
 	var u16s []uint16
 	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u16s))
 	hdr.Len = len(b) / 2
@@ -56,9 +47,6 @@ func toUint16Slice(b []byte) (result []uint16) { // here we create a new slice h
 }
 
 func toUint32Slice(b []byte) (result []uint32) {
-	if len(b) == 0 {
-		return nil
-	}
 	var u32s []uint32
 	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u32s))
 	hdr.Len = len(b) / 4
@@ -69,9 +57,6 @@ func toUint32Slice(b []byte) (result []uint32) {
 
 // BytesToU32Slice converts the given byte slice to uint32 slice
 func toUint64Slice(b []byte) []uint64 {
-	if len(b) == 0 {
-		return nil
-	}
 	var u64s []uint64
 	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u64s))
 	hdr.Len = len(b) / 8

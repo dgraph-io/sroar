@@ -56,3 +56,15 @@ func BenchmarkIntersectionRoaring(b *testing.B) {
 	}
 	b.Logf("card: %d\n", card)
 }
+
+// go test -bench BenchmarkSet -run -
+func BenchmarkSetRoaring(b *testing.B) {
+	b.StopTimer()
+	r := rand.New(rand.NewSource(0))
+	sz := int64(1000000)
+	s := NewBitmap()
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		s.Add(uint64(r.Int63n(sz)))
+	}
+}

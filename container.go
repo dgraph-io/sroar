@@ -103,8 +103,12 @@ func (c packed) and(other packed) []uint16 {
 	return out
 }
 
+var tmp = make([]uint16, 8192)
+
 func (c packed) andBitmap(other bitmap) []uint16 {
-	out := make([]uint16, c[indexSize]/2)
+	// out := toUint16Slice(alloc.Allocate(int(c[indexSize] + 4))) // some extra space.
+	// out := tmp
+	out := make([]uint16, 2+c[indexSize]/2)
 	out[indexType] = typeArray
 
 	pos := startIdx
@@ -115,9 +119,6 @@ func (c packed) andBitmap(other bitmap) []uint16 {
 		pos += other.bitValue(v)
 	}
 
-	if cap(out) == int(pos) {
-		out = append(out, 0)
-	}
 	// Ensure we have at least one empty slot at the end.
 	res := out[:pos+1]
 	res[indexSize] = uint16(len(res) * 2)
@@ -193,9 +194,8 @@ func (b bitmap) and(other bitmap) []uint16 {
 // bitValue returns a 0 or a 1 depending upon whether x is present in the bitmap, where 1 means
 // present and 0 means absent.
 func (b bitmap) bitValue(x uint16) uint16 {
-	idx := x / 16
-	pos := x % 16
-	return (b[4+idx] >> pos) & 1
+	idx := x >> 4
+	return (b[4+idx] >> (x & 0x0F)) & 1
 }
 
 func (b bitmap) isFull() bool {
