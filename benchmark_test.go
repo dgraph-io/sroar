@@ -49,9 +49,10 @@ func BenchmarkIntersectionRoaring(b *testing.B) {
 	}
 	b.StartTimer()
 
-	// card := uint64(0)
-	// for j := 0; j < b.N; j++ {
-	// 	s3 := And(s1, s2)
-	// 	card = card + s3.GetCardinality()
-	// }
+	card := 0
+	for j := 0; j < b.N; j++ {
+		s3 := And(s1, s2)
+		card = card + s3.GetCardinality()
+	}
+	b.Logf("card: %d\n", card)
 }
