@@ -1,7 +1,9 @@
 package roar
 
 import (
+	"fmt"
 	"math"
+	"strings"
 
 	"github.com/dgraph-io/ristretto/z"
 )
@@ -100,17 +102,18 @@ func (ra *Bitmap) fastExpand(bySize uint16) {
 }
 
 func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
-	// prevHash := z.MemHash(ra.data[:offset])
 	left := ra.data[offset:]
+	prevHash := z.MemHash(left)
 
 	ra.fastExpand(bySize) // Expand the buffer.
 	right := ra.data[len(ra.data)-len(left):]
 	copy(right, left) // Move data right.
+	afterHash := z.MemHash(right)
 
 	z.Memclr(ra.data[offset : offset+uint64(bySize)]) // Zero out the space in the middle.
-	// if hash := z.MemHash(ra.data[:offset]); hash != prevHash {
-	// 	panic("We modified something")
-	// }
+	if afterHash != prevHash {
+		panic("We modified something")
+	}
 }
 
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
@@ -182,11 +185,12 @@ func (ra *Bitmap) Set(x uint64) bool {
 			// Double the size of container for now.
 			ra.expandContainer(offset)
 		}
+		return true
 	case typeBitmap:
 		b := bitmap(c)
 		return b.add(uint16(x))
 	}
-	return true
+	panic("we shouldn't reach here")
 }
 
 func (ra *Bitmap) Has(x uint64) bool {
@@ -218,6 +222,22 @@ func (ra *Bitmap) GetCardinality() int {
 		sz += int(c[indexCardinality])
 	}
 	return sz
+}
+
+func (ra *Bitmap) String() string {
+	var b strings.Builder
+	b.WriteRune('\n')
+
+	for i := 0; i < ra.keys.numKeys(); i++ {
+		k := ra.keys.key(i)
+		v := ra.keys.val(i)
+
+		c := ra.getContainer(v)
+		b.WriteString(fmt.Sprintf(
+			"[%d] key: %#x Container [offset: %d, Size: %d, Type: %d, Card: %d]\n",
+			i, k, v, c[indexSize], c[indexType], c[indexCardinality]))
+	}
+	return b.String()
 }
 
 const fwd int = 0x01

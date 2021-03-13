@@ -1,9 +1,11 @@
 package roar
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -123,26 +125,71 @@ func TestEdgeCase(t *testing.T) {
 
 func TestBulkAdd(t *testing.T) {
 	ra := NewBitmap()
+	m := make(map[uint64]struct{})
 
-	max := uint64(10 << 16)
-	for i := uint64(1); i <= max; i++ {
-		ra.Set(uint64(i))
-		//	t.Logf("Added: %d\n", i)
+	max := int64(64 << 16)
+
+	start := time.Now()
+
+	for i := 0; ; i++ {
+		if i%100 == 0 && time.Since(start) > 5*time.Second {
+			t.Logf("Breaking from the loop\n")
+			break
+		}
+		x := uint64(rand.Int63n(max))
+
+		if _, has := m[x]; has {
+			if !ra.Has(x) {
+				t.Logf("x should be present: %d %#x. Bitmap: %s\n", x, x, ra)
+				off, found := ra.keys.getValue(x & mask)
+				assert(found)
+				c := ra.getContainer(off)
+				lo := uint16(x)
+				t.Logf("x: %#x lo: %#x. offset: %d\n", x, lo, off)
+				switch c[indexType] {
+				case typeArray:
+				case typeBitmap:
+					idx := lo / 16
+					pos := lo % 16
+					t.Logf("At idx: %d. Pos: %d val: %#b\n", idx, pos, c[startIdx+idx])
+				}
+
+				t.Logf("Added: %d %#x. Added: %v\n", x, x, ra.Set(x))
+				t.Logf("After add. has: %v\n", ra.Has(x))
+
+				// 				t.Logf("Hex dump of container at offset: %d\n%s\n", off, hex.Dump(toByteSlice(c)))
+				t.FailNow()
+			}
+			continue
+		}
+		m[x] = struct{}{}
+		fmt.Printf("Setting x: %#x\n", x)
+		if added := ra.Set(x); !added {
+			t.Logf("Unable to set: %d %#x\n", x, x)
+			t.Logf("ra.Has(x): %v\n", ra.Has(x))
+			t.FailNow()
+		}
+		// require.Truef(t, ra.Set(x), "Unable to set x: %d %#x\n", x, x)
+	}
+	// require.Equal(t, len(m), ra.GetCardinality())
+	for x := range m {
+		require.True(t, ra.Has(x))
 	}
 
-	_, has := ra.keys.getValue(0)
-	require.True(t, has)
-	for i := uint64(1); i <= max; i++ {
-		require.Truef(t, ra.Has(i), "i=%d", i)
-	}
-	t.Logf("Data size: %d\n", len(ra.data))
+	// _, has := ra.keys.getValue(0)
+	// require.True(t, has)
+	// for i := uint64(1); i <= max; i++ {
+	// 	require.Truef(t, ra.Has(i), "i=%d", i)
+	// }
+	// t.Logf("Data size: %d\n", len(ra.data))
 
 	dup := make([]byte, len(ra.data))
 	copy(dup, ra.data)
 
 	ra2 := FromBuffer(dup)
-	for i := uint64(1); i <= max; i++ {
-		require.True(t, ra2.Has(i))
+	// require.Equal(t, len(m), ra2.GetCardinality())
+	for x := range m {
+		require.True(t, ra2.Has(x))
 	}
 }
 

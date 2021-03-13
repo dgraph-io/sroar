@@ -221,23 +221,23 @@ func init() {
 }
 
 func (b bitmap) add(x uint16) bool {
-	idx := x / 16
-	pos := x % 16
+	idx := x >> 4
+	pos := x & 0xF
 
-	if has := b[4+idx] & bitmapMask[pos]; has > 0 {
+	if has := b[startIdx+idx] & bitmapMask[pos]; has > 0 {
 		return false
 	}
 
-	b[4+idx] |= bitmapMask[pos]
+	b[startIdx+idx] |= bitmapMask[pos]
 	b[indexCardinality] += 1
 	return true
 }
 
 func (b bitmap) has(x uint16) bool {
-	idx := x / 16
-	pos := x % 16
+	idx := x >> 4
+	pos := x & 0xF
 
-	has := b[4+idx] & bitmapMask[pos]
+	has := b[startIdx+idx] & bitmapMask[pos]
 	return has > 0
 }
 
