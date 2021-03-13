@@ -39,13 +39,13 @@ func dataAt(data []uint16, i int) uint16 {
 	return data[int(startIdx)+i]
 }
 
-type packed []uint16
+type array []uint16
 
 // find returns the index of the first element >= x.
 // The index is based on data portion of the container, ignoring startIdx.
 // If the element > than all elements present, then N is returned where N = cardinality of the
 // container.
-func (c packed) find(x uint16) uint16 {
+func (c array) find(x uint16) uint16 {
 	N := c[indexCardinality]
 	for i := startIdx; i < startIdx+N; i++ {
 		if len(c) <= int(i) {
@@ -58,7 +58,7 @@ func (c packed) find(x uint16) uint16 {
 	}
 	return N
 }
-func (c packed) has(x uint16) bool {
+func (c array) has(x uint16) bool {
 	N := c[indexCardinality]
 	idx := c.find(x)
 	if idx == N {
@@ -67,7 +67,7 @@ func (c packed) has(x uint16) bool {
 	return c[startIdx+idx] == x
 }
 
-func (c packed) add(x uint16) bool {
+func (c array) add(x uint16) bool {
 	idx := c.find(x)
 	N := c[indexCardinality]
 	offset := startIdx + idx
@@ -85,7 +85,7 @@ func (c packed) add(x uint16) bool {
 }
 
 // TODO: Figure out how memory allocation would work in these situations. Perhaps use allocator here?
-func (c packed) and(other packed) []uint16 {
+func (c array) andArray(other array) []uint16 {
 	nc := c[indexCardinality]
 	no := other[indexCardinality]
 
@@ -103,9 +103,40 @@ func (c packed) and(other packed) []uint16 {
 	return out
 }
 
+func (c array) orArray(other array) []uint16 {
+	max := c[indexCardinality] + other[indexCardinality]
+	if max > 4096 {
+		// Use bitmap container.
+		out := c.toBitmapContainer()
+		data := out[startIdx:]
+
+		num := int(out[indexCardinality])
+		for _, x := range other[startIdx:] {
+			idx := x / 16
+			pos := x % 16
+			before := bits.OnesCount16(data[idx])
+			data[idx] |= bitmapMask[pos]
+			after := bits.OnesCount16(data[idx])
+			num += after - before
+		}
+		out[indexCardinality] = uint16(num)
+		// For now, just keep it as a bitmap. No need to change if the
+		// cardinality is smaller than 4096.
+		return out
+	}
+
+	// The output would be of typeArray.
+	out := make([]uint16, startIdx+max)
+	num := union2by2(c[startIdx:], other[startIdx:], out[startIdx:])
+	out[indexType] = typeArray
+	out[indexSize] = uint16(len(out) * 2)
+	out[indexCardinality] = uint16(num)
+	return out
+}
+
 var tmp = make([]uint16, 8192)
 
-func (c packed) andBitmap(other bitmap) []uint16 {
+func (c array) andBitmap(other bitmap) []uint16 {
 	// out := toUint16Slice(alloc.Allocate(int(c[indexSize] + 4))) // some extra space.
 	// out := tmp
 	out := make([]uint16, 2+c[indexSize]/2)
@@ -126,17 +157,35 @@ func (c packed) andBitmap(other bitmap) []uint16 {
 	return res
 }
 
-func (c packed) isFull() bool {
+func (c array) isFull() bool {
 	N := c[indexCardinality]
 	return int(N) >= len(c)-4
 }
 
-func (c packed) all() []uint16 {
+func (c array) all() []uint16 {
 	N := c[indexCardinality]
 	return c[startIdx : startIdx+N]
 }
 
-func (c packed) String() string {
+func (c array) toBitmapContainer() []uint16 {
+	buf := make([]byte, maxSizeOfContainer)
+	b := bitmap(toUint16Slice(buf))
+	b[indexSize] = maxSizeOfContainer
+	b[indexType] = typeBitmap
+
+	data := b[startIdx:]
+	num := 0
+	for _, x := range c[startIdx:] {
+		idx := x / 16
+		pos := x % 16
+		data[idx] |= bitmapMask[pos]
+		num += bits.OnesCount16(data[idx])
+	}
+	b[indexCardinality] = uint16(num)
+	return b
+}
+
+func (c array) String() string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Size: %d\n", c[0]))
 	for i, val := range c[4:] {
@@ -186,6 +235,38 @@ func (b bitmap) and(other bitmap) []uint16 {
 	for i := 4; i < len(b); i++ {
 		out[i] = b[i] & other[i]
 		num += bits.OnesCount16(out[i])
+	}
+	out[indexCardinality] = uint16(num)
+	return out
+}
+
+func (b bitmap) orBitmap(other bitmap) []uint16 {
+	out := make([]uint16, maxSizeOfContainer)
+	copy(out, b) // Copy over first.
+
+	var num int
+	data := out[startIdx:]
+	for i, v := range other[startIdx:] {
+		data[i] |= v
+		num += bits.OnesCount16(data[i])
+	}
+	out[indexCardinality] = uint16(num)
+	return out
+}
+
+func (b bitmap) orArray(other array) []uint16 {
+	out := make([]uint16, maxSizeOfContainer)
+	copy(out, b)
+
+	num := int(out[indexCardinality])
+	for _, x := range other[startIdx:] {
+		idx := x / 16
+		pos := x % 16
+
+		before := bits.OnesCount16(out[4+idx])
+		out[4+idx] |= bitmapMask[pos]
+		after := bits.OnesCount16(out[4+idx])
+		num += after - before
 	}
 	out[indexCardinality] = uint16(num)
 	return out

@@ -15,6 +15,7 @@ const mask = uint64(0xFFFFFFFFFFFF0000)
 
 // First 8 bytes should contain the length of the array.
 type Bitmap struct {
+	// TODO: Make data []uint16 by default instead of byte slice.
 	data []byte
 	keys node
 }
@@ -143,15 +144,8 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 
 	} else {
 		// Convert to bitmap container.
-		buf := make([]byte, maxSizeOfContainer)
-		b := bitmap(toUint16Slice(buf))
-		b[indexSize] = maxSizeOfContainer
-		b[indexType] = typeBitmap
-
-		src := packed(ra.getContainer(offset))
-		for _, x := range src.all() {
-			b.add(x)
-		}
+		src := array(ra.getContainer(offset))
+		buf := toByteSlice(src.toBitmapContainer())
 		assert(copy(ra.data[offset:], buf) == maxSizeOfContainer)
 	}
 	// fmt.Printf("container offset: %d size: %d\n", offset, getSize(ra.data[offset:]))
@@ -180,7 +174,7 @@ func (ra *Bitmap) Add(x uint64) bool {
 	// fmt.Printf("len(c): %d c.size: %d\n", len(c), c[indexSize])
 	switch c[indexType] {
 	case typeArray:
-		p := packed(c)
+		p := array(c)
 		if added := p.add(uint16(x)); !added {
 			return false
 		}
@@ -206,7 +200,7 @@ func (ra *Bitmap) Has(x uint64) bool {
 	c := ra.getContainer(offset)
 	switch c[indexType] {
 	case typeArray:
-		p := packed(c)
+		p := array(c)
 		return p.has(y)
 	case typeBitmap:
 		b := bitmap(c)
@@ -231,24 +225,51 @@ func containerAnd(ac, bc []uint16) []uint16 {
 	bt := bc[indexType]
 
 	if at == typeArray && bt == typeArray {
-		left := packed(ac)
-		right := packed(bc)
-		return left.and(right)
+		left := array(ac)
+		right := array(bc)
+		return left.andArray(right)
 	}
 	if at == typeArray && bt == typeBitmap {
-		left := packed(ac)
+		left := array(ac)
 		right := bitmap(bc)
 		return left.andBitmap(right)
 	}
 	if at == typeBitmap && bt == typeArray {
 		left := bitmap(ac)
-		right := packed(bc)
+		right := array(bc)
 		return right.andBitmap(left)
 	}
 	if at == typeBitmap && bt == typeBitmap {
 		left := bitmap(ac)
 		right := bitmap(bc)
 		return left.and(right)
+	}
+	panic("containerAnd: We should not reach here")
+}
+
+func containerOr(ac, bc []uint16) []uint16 {
+	at := ac[indexType]
+	bt := bc[indexType]
+
+	if at == typeArray && bt == typeArray {
+		left := array(ac)
+		right := array(bc)
+		return left.orArray(right)
+	}
+	if at == typeArray && bt == typeBitmap {
+		left := array(ac)
+		right := bitmap(bc)
+		return right.orArray(left)
+	}
+	if at == typeBitmap && bt == typeArray {
+		left := bitmap(ac)
+		right := array(bc)
+		return left.orArray(right)
+	}
+	if at == typeBitmap && bt == typeBitmap {
+		left := bitmap(ac)
+		right := bitmap(bc)
+		return left.orBitmap(right)
 	}
 	panic("containerAnd: We should not reach here")
 }
@@ -263,12 +284,10 @@ func And(a, b *Bitmap) *Bitmap {
 		bk := a.keys.key(bi)
 		if ak == bk {
 			// Do the intersection.
-			off, has := a.keys.getValue(ak)
-			assert(has)
+			off := a.keys.val(ai)
 			ac := a.getContainer(off)
 
-			off, has = b.keys.getValue(bk)
-			assert(has)
+			off = b.keys.val(bi)
 			bc := b.getContainer(off)
 
 			outc := containerAnd(ac, bc)
@@ -282,10 +301,44 @@ func And(a, b *Bitmap) *Bitmap {
 			bi++
 		} else if ak < bk {
 			ai++
-			ak = a.keys.key(ai)
 		} else {
 			bi++
-			bk = b.keys.key(bi)
+		}
+	}
+	return res
+}
+
+func Or(a, b *Bitmap) *Bitmap {
+	ai, an := 0, a.keys.numKeys()
+	bi, bn := 0, b.keys.numKeys()
+
+	res := NewBitmap()
+	for ai < an && bi < bn {
+		ak := a.keys.key(ai)
+		ac := a.getContainer(a.keys.val(ai))
+
+		bk := a.keys.key(bi)
+		bc := b.getContainer(b.keys.val(bi))
+
+		if ak == bk {
+			// Do the union.
+			outc := containerOr(ac, bc)
+			outb := toByteSlice(outc)
+			offset := res.newContainer(uint16(len(outb)))
+			copy(res.data[offset:], outb)
+			res.setKey(ak, offset)
+			ai++
+			bi++
+		} else if ak < bk {
+			off := res.newContainer(uint16(sizeInBytesU16(len(ac))))
+			copy(res.getContainer(off), ac)
+			res.keys.set(ak, off)
+			ak++
+		} else {
+			off := res.newContainer(uint16(sizeInBytesU16(len(bc))))
+			copy(res.getContainer(off), bc)
+			res.keys.set(bk, off)
+			bk++
 		}
 	}
 	return res
