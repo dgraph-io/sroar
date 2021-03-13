@@ -49,7 +49,6 @@ func (c array) find(x uint16) uint16 {
 	N := c[indexCardinality]
 	for i := startIdx; i < startIdx+N; i++ {
 		if len(c) <= int(i) {
-			fmt.Printf("N: %d i: %d\n", N, i)
 			panic(fmt.Sprintf("find: %d len(c) %d <= i %d\n", x, len(c), i))
 		}
 		if c[i] >= x {
@@ -167,6 +166,22 @@ func (c array) all() []uint16 {
 	return c[startIdx : startIdx+N]
 }
 
+func (c array) minimum() uint16 {
+	N := c[indexCardinality]
+	if N == 0 {
+		return 0
+	}
+	return c[startIdx]
+}
+
+func (c array) maximum() uint16 {
+	N := c[indexCardinality]
+	if N == 0 {
+		return 0
+	}
+	return c[startIdx+N-1]
+}
+
 func (c array) toBitmapContainer() []uint16 {
 	buf := make([]byte, maxSizeOfContainer)
 	b := bitmap(toUint16Slice(buf))
@@ -281,4 +296,35 @@ func (b bitmap) bitValue(x uint16) uint16 {
 
 func (b bitmap) isFull() bool {
 	return false
+}
+
+func (b bitmap) minimum() uint16 {
+	N := b[indexCardinality]
+	if N == 0 {
+		return 0
+	}
+	for i, x := range b[startIdx:] {
+		lz := bits.LeadingZeros16(x)
+		if lz == 16 {
+			continue
+		}
+		return uint16(16*i + lz)
+	}
+	panic("We shouldn't reach here")
+}
+
+func (b bitmap) maximum() uint16 {
+	N := b[indexCardinality]
+	if N == 0 {
+		return 0
+	}
+	for i := len(b); i >= int(startIdx); i-- {
+		x := b[i]
+		tz := bits.TrailingZeros16(x)
+		if tz == 16 {
+			continue
+		}
+		return uint16(16*i + 15 - tz)
+	}
+	panic("We shouldn't reach here")
 }

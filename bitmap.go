@@ -157,7 +157,7 @@ func (ra Bitmap) getContainer(offset uint64) []uint16 {
 	return toUint16Slice(data[:sz])
 }
 
-func (ra *Bitmap) Add(x uint64) bool {
+func (ra *Bitmap) Set(x uint64) bool {
 	key := x & mask
 	offset, has := ra.keys.getValue(key)
 	// fmt.Printf("x: %x %d key: %x, offset: %d has: %v\n", x, x, key, offset, has)
@@ -218,6 +218,39 @@ func (ra *Bitmap) GetCardinality() int {
 		sz += int(c[indexCardinality])
 	}
 	return sz
+}
+
+const fwd int = 0x01
+const rev int = 0x02
+
+func (ra *Bitmap) Minimum() uint64 { return ra.extreme(fwd) }
+func (ra *Bitmap) Maximum() uint64 { return ra.extreme(rev) }
+
+func (ra *Bitmap) extreme(dir int) uint64 {
+	N := ra.keys.numKeys()
+	if N == 0 {
+		return 0
+	}
+	k := ra.keys.key(0)
+	offset := ra.keys.val(0)
+	c := ra.getContainer(offset)
+
+	switch c[indexType] {
+	case typeArray:
+		a := array(c)
+		if dir == fwd {
+			return k | uint64(a.minimum())
+		}
+		return k | uint64(a.maximum())
+	case typeBitmap:
+		b := bitmap(c)
+		if dir == fwd {
+			return k | uint64(b.minimum())
+		}
+		return k | uint64(b.maximum())
+	default:
+		panic("We don't support this type of container")
+	}
 }
 
 func containerAnd(ac, bc []uint16) []uint16 {
@@ -333,13 +366,31 @@ func Or(a, b *Bitmap) *Bitmap {
 			off := res.newContainer(uint16(sizeInBytesU16(len(ac))))
 			copy(res.getContainer(off), ac)
 			res.keys.set(ak, off)
-			ak++
+			ai++
 		} else {
 			off := res.newContainer(uint16(sizeInBytesU16(len(bc))))
 			copy(res.getContainer(off), bc)
 			res.keys.set(bk, off)
-			bk++
+			bi++
 		}
+	}
+	for ai < an {
+		ak := a.keys.key(ai)
+		ac := a.getContainer(a.keys.val(ai))
+		off := res.newContainer(uint16(sizeInBytesU16(len(ac))))
+
+		copy(res.getContainer(off), ac)
+		res.keys.set(ak, off)
+		ai++
+	}
+	for bi < bn {
+		bk := b.keys.key(bi)
+		bc := b.getContainer(b.keys.val(bi))
+		off := res.newContainer(uint16(sizeInBytesU16(len(bc))))
+
+		copy(res.getContainer(off), bc)
+		res.keys.set(bk, off)
+		bi++
 	}
 	return res
 }

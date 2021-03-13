@@ -1,6 +1,8 @@
 package roar
 
 import (
+	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -75,7 +77,7 @@ func TestContainer(t *testing.T) {
 func TestKey(t *testing.T) {
 	ra := NewBitmap()
 	for i := 1; i <= 10; i++ {
-		ra.Add(uint64(i))
+		ra.Set(uint64(i))
 	}
 
 	off, has := ra.keys.getValue(0)
@@ -85,11 +87,11 @@ func TestKey(t *testing.T) {
 
 	// Create 10 containers
 	for i := 0; i < 10; i++ {
-		ra.Add(uint64(i)<<16 + 1)
+		ra.Set(uint64(i)<<16 + 1)
 	}
 
 	for i := 0; i < 10; i++ {
-		ra.Add(uint64(i)<<16 + 2)
+		ra.Set(uint64(i)<<16 + 2)
 	}
 
 	for i := 1; i < 10; i++ {
@@ -101,7 +103,7 @@ func TestKey(t *testing.T) {
 
 	// Do add in the reverse order.
 	for i := 19; i >= 10; i-- {
-		ra.Add(uint64(i)<<16 + 2)
+		ra.Set(uint64(i)<<16 + 2)
 	}
 
 	for i := 10; i < 20; i++ {
@@ -115,7 +117,7 @@ func TestKey(t *testing.T) {
 func TestEdgeCase(t *testing.T) {
 	ra := NewBitmap()
 
-	require.True(t, ra.Add(65536))
+	require.True(t, ra.Set(65536))
 	require.True(t, ra.Has(65536))
 }
 
@@ -124,7 +126,7 @@ func TestBulkAdd(t *testing.T) {
 
 	max := uint64(10 << 16)
 	for i := uint64(1); i <= max; i++ {
-		ra.Add(uint64(i))
+		ra.Set(uint64(i))
 		//	t.Logf("Added: %d\n", i)
 	}
 
@@ -141,6 +143,98 @@ func TestBulkAdd(t *testing.T) {
 	ra2 := FromBuffer(dup)
 	for i := uint64(1); i <= max; i++ {
 		require.True(t, ra2.Has(i))
+	}
+}
+
+func TestBitmapUint64Max(t *testing.T) {
+	bm := NewBitmap()
+
+	edges := []uint64{0, math.MaxUint8, math.MaxUint16, math.MaxUint32, math.MaxUint64}
+	for _, e := range edges {
+		bm.Set(e)
+	}
+	for _, e := range edges {
+		require.True(t, bm.Has(e))
+	}
+}
+
+func TestBitmapOps(t *testing.T) {
+	M := int64(10000)
+	// smaller bitmap would always operate with [0, M) range.
+	// max for each bitmap = M * F
+	F := []int64{1, 10, 100, 1000}
+	N := 10000
+
+	for _, f := range F {
+		t.Logf("Using N: %d M: %d F: %d\n", N, M, f)
+		small, big := NewBitmap(), NewBitmap()
+		occ := make(map[uint64]int)
+		smallMap := make(map[uint64]struct{})
+		bigMap := make(map[uint64]struct{})
+
+		for i := 0; i < N; i++ {
+			smallx := uint64(rand.Int63n(M))
+
+			_, has := smallMap[smallx]
+			added := small.Set(smallx)
+			if has {
+				require.False(t, added, "Can't readd already present x: %d", smallx)
+			}
+			smallMap[smallx] = struct{}{}
+
+			bigx := uint64(rand.Int63n(M * f))
+			_, has = bigMap[bigx]
+			added = big.Set(bigx)
+			if has {
+				require.False(t, added, "Can't readd already present x: %d", bigx)
+			}
+			bigMap[bigx] = struct{}{}
+
+			occ[smallx] |= 0x01 // binary 0001
+			occ[bigx] |= 0x02   // binary 0010
+		}
+		// require.Equal(t, len(smallMap), small.GetCardinality())
+		// require.Equal(t, len(bigMap), big.GetCardinality())
+
+		bitOr := Or(small, big)
+		bitAnd := And(small, big)
+		t.Logf("Sizes. small: %d big: %d, bitOr: %d bitAnd: %d\n",
+			small.GetCardinality(), big.GetCardinality(),
+			bitOr.GetCardinality(), bitAnd.GetCardinality())
+
+		cntOr, cntAnd := 0, 0
+		for x, freq := range occ {
+			if freq == 0x00 {
+				require.Failf(t, "Failed", "Value of freq can't be zero. Found: %#x\n", freq)
+			} else if freq == 0x01 {
+				_, has := smallMap[x]
+				require.True(t, has)
+				require.True(t, small.Has(x))
+				require.Truef(t, bitOr.Has(x), "Expected %d %#x. But, not found. freq: %#x\n",
+					x, x, freq)
+				cntOr++
+
+			} else if freq == 0x02 {
+				// one of them has it.
+				_, has := bigMap[x]
+				require.True(t, has)
+				require.True(t, big.Has(x))
+				require.Truef(t, bitOr.Has(x), "Expected %d %#x. But, not found. freq: %#x\n",
+					x, x, freq)
+				cntOr++
+
+			} else if freq == 0x03 {
+				require.True(t, small.Has(x))
+				require.True(t, big.Has(x))
+				require.True(t, bitAnd.Has(x))
+				cntOr++
+				cntAnd++
+			} else {
+				require.Failf(t, "Failed", "Value of freq can't exceed 0x03. Found: %#x\n", freq)
+			}
+		}
+		require.Equal(t, cntOr, bitOr.GetCardinality())
+		require.Equal(t, cntAnd, bitAnd.GetCardinality())
 	}
 }
 
