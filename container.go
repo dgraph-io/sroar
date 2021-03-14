@@ -187,16 +187,16 @@ func (c array) toBitmapContainer() []uint16 {
 	b := bitmap(toUint16Slice(buf))
 	b[indexSize] = maxSizeOfContainer
 	b[indexType] = typeBitmap
+	b[indexCardinality] = c[indexCardinality]
 
 	data := b[startIdx:]
-	num := 0
 	for _, x := range c[startIdx:] {
 		idx := x / 16
 		pos := x % 16
 		data[idx] |= bitmapMask[pos]
-		num += bits.OnesCount16(data[idx])
+		// num += bits.OnesCount16(data[idx])
 	}
-	b[indexCardinality] = uint16(num)
+	// b[indexCardinality] = uint16(num)
 	return b
 }
 
@@ -229,7 +229,7 @@ func (b bitmap) add(x uint16) bool {
 	}
 
 	b[startIdx+idx] |= bitmapMask[pos]
-	b[indexCardinality] += 1
+	b[indexCardinality]++
 	return true
 }
 

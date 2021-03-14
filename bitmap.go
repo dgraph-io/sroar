@@ -118,6 +118,7 @@ func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
+	// fmt.Printf("newContainer at offset: %d sz: %d\n", offset, sz)
 	ra.fastExpand(sz)
 	setSize(ra.data[offset:], sz)
 	return offset
@@ -132,7 +133,7 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 	if sz >= 4096 {
 		bySize = maxSizeOfContainer - sz
 	}
-	// fmt.Printf("expandContainer. offset: %d bySize: %d\n", offset, sz)
+	// fmt.Printf("expandContainer. offset: %d bySize: %d sz: %d\n", offset, bySize, sz+bySize)
 
 	// Select the portion to the right of the container, beyond its right boundary.
 	ra.scootRight(offset+uint64(sz), bySize)
@@ -167,8 +168,6 @@ func (ra *Bitmap) Set(x uint64) bool {
 	if !has {
 		// We need to add a container.
 		o := uint64(ra.newContainer(minSize))
-		// fmt.Printf(" ----------- Added container for: %#x, offset: %d\n", key, o)
-
 		// offset might have been updated by setKey.
 		offset = ra.setKey(key, o)
 	}
@@ -245,6 +244,29 @@ const rev int = 0x02
 
 func (ra *Bitmap) Minimum() uint64 { return ra.extreme(fwd) }
 func (ra *Bitmap) Maximum() uint64 { return ra.extreme(rev) }
+
+func (ra *Bitmap) Debug(x uint64) string {
+	var b strings.Builder
+	hi := x & mask
+	off, found := ra.keys.getValue(hi)
+	if !found {
+		b.WriteString(fmt.Sprintf("Unable to find the container for x: %#x\n", hi))
+		b.WriteString(ra.String())
+	}
+	c := ra.getContainer(off)
+	lo := uint16(x)
+
+	b.WriteString(fmt.Sprintf("x: %#x lo: %#x. offset: %d\n", x, lo, off))
+
+	switch c[indexType] {
+	case typeArray:
+	case typeBitmap:
+		idx := lo / 16
+		pos := lo % 16
+		b.WriteString(fmt.Sprintf("At idx: %d. Pos: %d val: %#b\n", idx, pos, c[startIdx+idx]))
+	}
+	return b.String()
+}
 
 func (ra *Bitmap) extreme(dir int) uint64 {
 	N := ra.keys.numKeys()

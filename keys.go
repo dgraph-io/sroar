@@ -60,17 +60,21 @@ func (n node) search(k uint64) int {
 	for lo+16 <= hi {
 		mid := (lo + hi) / 2
 		ki := n.key(mid)
+		// fmt.Printf("lo: %d mid: %d hi: %d. ki: %#x k: %#x\n", lo, mid, hi, ki, k)
 
 		if ki < k {
 			lo = mid + 1
 		} else if ki > k {
-			hi = mid - 1
+			hi = mid
+			// We should keep it equal, and not -1, because we'll take the first greater entry.
 		} else {
+			// fmt.Printf("returning mid: %d\n", mid)
 			return mid
 		}
 	}
 	for ; lo <= hi; lo++ {
 		ki := n.key(lo)
+		// fmt.Printf("itr. lo: %d hi: %d. ki: %#x k: %#x\n", lo, hi, ki, k)
 		if ki >= k {
 			return lo
 		}
@@ -136,7 +140,8 @@ func (n node) getValue(k uint64) (uint64, bool) {
 func (n node) set(k, v uint64) (numAdded int) {
 	idx := n.search(k)
 	ki := n.key(idx)
-	if n.numKeys() == n.maxKeys() {
+	N := n.numKeys()
+	if N == n.maxKeys() {
 		// This happens during split of non-root node, when we are updating the child pointer of
 		// right node. Hence, the key should already exist.
 		assert(ki == k)
@@ -149,6 +154,7 @@ func (n node) set(k, v uint64) (numAdded int) {
 	}
 	// If the k does not exist already, increment the number of keys.
 	if ki != k {
+		// fmt.Printf("ki %#x != k %#x idx: %d. N: %d\n", ki, k, idx, N)
 		n.setNumKeys(n.numKeys() + 1)
 		numAdded = 1
 	}

@@ -1,7 +1,6 @@
 package roar
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
 	"testing"
@@ -126,15 +125,19 @@ func TestEdgeCase(t *testing.T) {
 func TestBulkAdd(t *testing.T) {
 	ra := NewBitmap()
 	m := make(map[uint64]struct{})
-
 	max := int64(64 << 16)
-
 	start := time.Now()
 
+	var cnt int
 	for i := 0; ; i++ {
-		if i%100 == 0 && time.Since(start) > 5*time.Second {
-			t.Logf("Breaking from the loop\n")
-			break
+		if i%100 == 0 && time.Since(start) > time.Second {
+			cnt++
+			start = time.Now()
+			// t.Logf("Bitmap:\n%s\n", ra)
+			if cnt == 3 {
+				t.Logf("Breaking out of the loop\n")
+				break
+			}
 		}
 		x := uint64(rand.Int63n(max))
 
@@ -163,15 +166,23 @@ func TestBulkAdd(t *testing.T) {
 			continue
 		}
 		m[x] = struct{}{}
-		fmt.Printf("Setting x: %#x\n", x)
+		// fmt.Printf("Setting x: %#x\n", x)
 		if added := ra.Set(x); !added {
 			t.Logf("Unable to set: %d %#x\n", x, x)
 			t.Logf("ra.Has(x): %v\n", ra.Has(x))
 			t.FailNow()
 		}
+		// for x := range m {
+		// 	if !ra.Has(x) {
+		// 		t.Logf("has(x) failed: %#x\n", x)
+		// 		t.Logf("Debug: %s\n", ra.Debug(x))
+		// 		t.FailNow()
+		// 	}
+		// }
 		// require.Truef(t, ra.Set(x), "Unable to set x: %d %#x\n", x, x)
 	}
-	// require.Equal(t, len(m), ra.GetCardinality())
+	t.Logf("Card: %d\n", len(m))
+	require.Equalf(t, len(m), ra.GetCardinality(), "Bitmap:\n%s\n", ra)
 	for x := range m {
 		require.True(t, ra.Has(x))
 	}
@@ -183,11 +194,12 @@ func TestBulkAdd(t *testing.T) {
 	// }
 	// t.Logf("Data size: %d\n", len(ra.data))
 
+	t.Logf("Copying data. Size: %d\n", len(ra.data))
 	dup := make([]byte, len(ra.data))
 	copy(dup, ra.data)
 
 	ra2 := FromBuffer(dup)
-	// require.Equal(t, len(m), ra2.GetCardinality())
+	require.Equal(t, len(m), ra2.GetCardinality())
 	for x := range m {
 		require.True(t, ra2.Has(x))
 	}
@@ -286,6 +298,9 @@ func TestBitmapOps(t *testing.T) {
 }
 
 func TestUint16(t *testing.T) {
+	a := uint16(0xfeff)
+	b := uint16(0x100)
+	t.Logf("a & b: %#x", a&b)
 	var x uint16
 	for i := 0; i < 100000; i++ {
 		prev := x
