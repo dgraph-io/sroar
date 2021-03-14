@@ -56,7 +56,7 @@ func (n node) isFull() bool {
 // Search returns the index of a smallest key >= k in a node.
 func (n node) search(k uint64) int {
 	N := n.numKeys()
-	lo, hi := 0, N
+	lo, hi := 0, N-1
 	for lo+16 <= hi {
 		mid := (lo + hi) / 2
 		ki := n.key(mid)
@@ -137,33 +137,36 @@ func (n node) getValue(k uint64) (uint64, bool) {
 }
 
 // set returns true if it added a new key.
-func (n node) set(k, v uint64) (numAdded int) {
-	idx := n.search(k)
-	ki := n.key(idx)
+func (n node) set(k, v uint64) bool {
 	N := n.numKeys()
+	idx := n.search(k)
+	if idx == N {
+		n.setNumKeys(N + 1)
+		n.setAt(keyOffset(idx), k)
+		n.setAt(valOffset(idx), v)
+		return true
+	}
+
+	ki := n.key(idx)
 	if N == n.maxKeys() {
 		// This happens during split of non-root node, when we are updating the child pointer of
 		// right node. Hence, the key should already exist.
 		assert(ki == k)
 	}
-	if ki > k {
-		// Found the first entry which is greater than k. So, we need to fit k
-		// just before it. For that, we should move the rest of the data in the
-		// node to the right to make space for k.
-		n.moveRight(idx)
-	}
-	// If the k does not exist already, increment the number of keys.
-	if ki != k {
-		// fmt.Printf("ki %#x != k %#x idx: %d. N: %d\n", ki, k, idx, N)
-		n.setNumKeys(n.numKeys() + 1)
-		numAdded = 1
-	}
-	if ki == 0 || ki >= k {
-		n.setAt(keyOffset(idx), k)
+	if ki == k {
 		n.setAt(valOffset(idx), v)
-		return
+		return false
 	}
-	panic("shouldn't reach here")
+	assert(ki > k)
+	// Found the first entry which is greater than k. So, we need to fit k
+	// just before it. For that, we should move the rest of the data in the
+	// node to the right to make space for k.
+	n.moveRight(idx)
+	n.setNumKeys(N + 1)
+	n.setAt(keyOffset(idx), k)
+	n.setAt(valOffset(idx), v)
+	return true
+	// panic("shouldn't reach here")
 }
 
 func (n node) updateOffsets(beyond, by uint64) {

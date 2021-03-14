@@ -59,7 +59,7 @@ func NewBitmapWith(numKeys int) *Bitmap {
 
 // setKey sets a key and container offset.
 func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
-	if num := ra.keys.set(k, offset); num == 0 {
+	if added := ra.keys.set(k, offset); !added {
 		// No new key was added. So, we can just return.
 		return offset
 	}
@@ -407,12 +407,12 @@ func Or(a, b *Bitmap) *Bitmap {
 		} else if ak < bk {
 			off := res.newContainer(uint16(sizeInBytesU16(len(ac))))
 			copy(res.getContainer(off), ac)
-			res.keys.set(ak, off)
+			res.setKey(ak, off)
 			ai++
 		} else {
 			off := res.newContainer(uint16(sizeInBytesU16(len(bc))))
 			copy(res.getContainer(off), bc)
-			res.keys.set(bk, off)
+			res.setKey(bk, off)
 			bi++
 		}
 	}
@@ -422,7 +422,7 @@ func Or(a, b *Bitmap) *Bitmap {
 		off := res.newContainer(uint16(sizeInBytesU16(len(ac))))
 
 		copy(res.getContainer(off), ac)
-		res.keys.set(ak, off)
+		res.setKey(ak, off)
 		ai++
 	}
 	for bi < bn {
@@ -431,7 +431,7 @@ func Or(a, b *Bitmap) *Bitmap {
 		off := res.newContainer(uint16(sizeInBytesU16(len(bc))))
 
 		copy(res.getContainer(off), bc)
-		res.keys.set(bk, off)
+		res.setKey(bk, off)
 		bi++
 	}
 	return res
