@@ -1,3 +1,8 @@
+// Copyright 2016 by the roaring authors.
+// Licensed under the Apache License, Version 2.0.
+// Full version of the license is here:
+// https://github.com/RoaringBitmap/roaring/blob/master/LICENSE
+
 package roar
 
 // TODO: Add license from roaring bitmap library.
