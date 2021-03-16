@@ -85,13 +85,12 @@ func (c array) add(x uint16) bool {
 
 // TODO: Figure out how memory allocation would work in these situations. Perhaps use allocator here?
 func (c array) andArray(other array) []uint16 {
-	nc := c[indexCardinality]
-	no := other[indexCardinality]
+	min := min16(c[indexCardinality], other[indexCardinality])
 
-	setc := c[startIdx : startIdx+nc]
-	seto := other[startIdx : startIdx+no]
+	setc := c.all()
+	seto := other.all()
 
-	out := make([]uint16, startIdx+min16(nc, no))
+	out := make([]uint16, startIdx+min)
 	num := uint16(intersection2by2(setc, seto, out[startIdx:]))
 
 	// Truncate out to how many values were found.
@@ -110,7 +109,7 @@ func (c array) orArray(other array) []uint16 {
 		data := out[startIdx:]
 
 		num := int(out[indexCardinality])
-		for _, x := range other[startIdx:] {
+		for _, x := range other.all() {
 			idx := x / 16
 			pos := x % 16
 			before := bits.OnesCount16(data[idx])
@@ -126,7 +125,7 @@ func (c array) orArray(other array) []uint16 {
 
 	// The output would be of typeArray.
 	out := make([]uint16, startIdx+max)
-	num := union2by2(c[startIdx:], other[startIdx:], out[startIdx:])
+	num := union2by2(c.all(), other.all(), out[startIdx:])
 	out[indexType] = typeArray
 	out[indexSize] = uint16(len(out) * 2)
 	out[indexCardinality] = uint16(num)
@@ -136,29 +135,25 @@ func (c array) orArray(other array) []uint16 {
 var tmp = make([]uint16, 8192)
 
 func (c array) andBitmap(other bitmap) []uint16 {
-	// out := toUint16Slice(alloc.Allocate(int(c[indexSize] + 4))) // some extra space.
-	// out := tmp
-	out := make([]uint16, 2+c[indexSize]/2)
+	out := make([]uint16, startIdx+c[indexCardinality]+2) // some extra space.
 	out[indexType] = typeArray
 
 	pos := startIdx
-	N := c[indexCardinality]
-	for i := uint16(0); i < N; i++ {
-		v := c[startIdx+i]
-		out[pos] = v
-		pos += other.bitValue(v)
+	for _, x := range c.all() {
+		out[pos] = x
+		pos += other.bitValue(x)
 	}
 
 	// Ensure we have at least one empty slot at the end.
 	res := out[:pos+1]
 	res[indexSize] = uint16(len(res) * 2)
-	res[indexCardinality] = pos
+	res[indexCardinality] = pos - startIdx
 	return res
 }
 
 func (c array) isFull() bool {
 	N := c[indexCardinality]
-	return int(N) >= len(c)-4
+	return int(startIdx+N) >= len(c)
 }
 
 func (c array) all() []uint16 {
@@ -190,7 +185,7 @@ func (c array) toBitmapContainer() []uint16 {
 	b[indexCardinality] = c[indexCardinality]
 
 	data := b[startIdx:]
-	for _, x := range c[startIdx:] {
+	for _, x := range c.all() {
 		idx := x / 16
 		pos := x % 16
 		data[idx] |= bitmapMask[pos]
@@ -274,7 +269,7 @@ func (b bitmap) orArray(other array) []uint16 {
 	copy(out, b)
 
 	num := int(out[indexCardinality])
-	for _, x := range other[startIdx:] {
+	for _, x := range other.all() {
 		idx := x / 16
 		pos := x % 16
 
@@ -287,11 +282,26 @@ func (b bitmap) orArray(other array) []uint16 {
 	return out
 }
 
+func (b bitmap) ToArray() []uint16 {
+	var res []uint16
+	data := b[startIdx:]
+	for idx := uint16(0); idx < uint16(len(data)); idx++ {
+		x := data[idx]
+		// TODO: This could potentially be optimized.
+		for pos := uint16(0); pos < 16; pos++ {
+			if x&bitmapMask[pos] > 0 {
+				res = append(res, (idx<<4)|pos)
+			}
+		}
+	}
+	return res
+}
+
 // bitValue returns a 0 or a 1 depending upon whether x is present in the bitmap, where 1 means
 // present and 0 means absent.
 func (b bitmap) bitValue(x uint16) uint16 {
 	idx := x >> 4
-	return (b[4+idx] >> (x & 0x0F)) & 1
+	return (b[4+idx] >> (15 - (x & 0xF))) & 1
 }
 
 func (b bitmap) isFull() bool {

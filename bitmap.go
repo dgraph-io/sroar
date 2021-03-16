@@ -78,7 +78,6 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	ra.scootRight(curSize, uint16(bySize))
 	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
 	ra.keys.setAt(0, uint64(curSize+bySize))
-	// fmt.Printf("Expanding keys to: %d. num keys: %d\n", curSize+bySize, ra.keys.numKeys())
 
 	// All containers have moved to the right by bySize bytes.
 	// Update their offsets.
@@ -118,7 +117,6 @@ func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
-	// fmt.Printf("newContainer at offset: %d sz: %d\n", offset, sz)
 	ra.fastExpand(sz)
 	setSize(ra.data[offset:], sz)
 	return offset
@@ -133,15 +131,10 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 	if sz >= 4096 {
 		bySize = maxSizeOfContainer - sz
 	}
-	// fmt.Printf("expandContainer. offset: %d bySize: %d sz: %d\n", offset, bySize, sz+bySize)
 
 	// Select the portion to the right of the container, beyond its right boundary.
 	ra.scootRight(offset+uint64(sz), bySize)
 	ra.keys.updateOffsets(offset, uint64(bySize))
-	// fmt.Printf("Expanding container at %d to %d by %d. num keys: %d\n", offset, sz+bySize, bySize, ra.keys.numKeys())
-	// for i := 0; i < ra.keys.numKeys(); i++ {
-	// 	fmt.Printf("expand container. key: %#x offset: %d\n", ra.keys.key(i), ra.keys.val(i))
-	// }
 
 	if sz < 4096 {
 		setSize(ra.data[offset:], sz+bySize)
@@ -152,7 +145,6 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 		buf := toByteSlice(src.toBitmapContainer())
 		assert(copy(ra.data[offset:], buf) == maxSizeOfContainer)
 	}
-	// fmt.Printf("container offset: %d size: %d\n", offset, getSize(ra.data[offset:]))
 }
 
 func (ra Bitmap) getContainer(offset uint64) []uint16 {
@@ -164,7 +156,6 @@ func (ra Bitmap) getContainer(offset uint64) []uint16 {
 func (ra *Bitmap) Set(x uint64) bool {
 	key := x & mask
 	offset, has := ra.keys.getValue(key)
-	// fmt.Printf("x: %x %d key: %x, offset: %d has: %v\n", x, x, key, offset, has)
 	if !has {
 		// We need to add a container.
 		o := uint64(ra.newContainer(minSize))
@@ -172,8 +163,6 @@ func (ra *Bitmap) Set(x uint64) bool {
 		offset = ra.setKey(key, o)
 	}
 	c := ra.getContainer(offset)
-	// fmt.Printf("len(c): %d\n", len(c))
-	// fmt.Printf("len(c): %d c.size: %d\n", len(c), c[indexSize])
 	switch c[indexType] {
 	case typeArray:
 		p := array(c)
@@ -221,6 +210,31 @@ func (ra *Bitmap) GetCardinality() int {
 		sz += int(c[indexCardinality])
 	}
 	return sz
+}
+
+func (ra *Bitmap) ToArray() []uint64 {
+	var res []uint64
+	N := ra.keys.numKeys()
+	for i := 0; i < N; i++ {
+		key := ra.keys.key(i)
+		off := ra.keys.val(i)
+		c := ra.getContainer(off)
+
+		switch c[indexType] {
+		case typeArray:
+			a := array(c)
+			for _, lo := range a.all() {
+				res = append(res, key|uint64(lo))
+			}
+		case typeBitmap:
+			b := bitmap(c)
+			out := b.ToArray()
+			for _, x := range out {
+				res = append(res, key|uint64(x))
+			}
+		}
+	}
+	return res
 }
 
 func (ra *Bitmap) String() string {
@@ -312,7 +326,8 @@ func containerAnd(ac, bc []uint16) []uint16 {
 	if at == typeBitmap && bt == typeArray {
 		left := bitmap(ac)
 		right := array(bc)
-		return right.andBitmap(left)
+		out := right.andBitmap(left)
+		return out
 	}
 	if at == typeBitmap && bt == typeBitmap {
 		left := bitmap(ac)

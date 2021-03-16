@@ -217,6 +217,25 @@ func TestBitmapUint64Max(t *testing.T) {
 	}
 }
 
+func TestBitmapZero(t *testing.T) {
+	bm1 := NewBitmap()
+	bm1.Set(1)
+	uids := bm1.ToArray()
+	require.Equal(t, 1, len(uids))
+	for _, u := range uids {
+		require.Equal(t, uint64(1), u)
+	}
+
+	bm2 := NewBitmap()
+	bm2.Set(2)
+
+	bm3 := Or(bm1, bm2)
+	require.False(t, bm3.Has(0))
+	require.True(t, bm3.Has(1))
+	require.True(t, bm3.Has(2))
+	require.Equal(t, 2, bm3.GetCardinality())
+}
+
 func TestBitmapOps(t *testing.T) {
 	M := int64(10000)
 	// smaller bitmap would always operate with [0, M) range.
@@ -285,15 +304,31 @@ func TestBitmapOps(t *testing.T) {
 			} else if freq == 0x03 {
 				require.True(t, small.Has(x))
 				require.True(t, big.Has(x))
-				// require.Truef(t, bitAnd.Has(x), "x: %#x\n", x)
+				require.Truef(t, bitAnd.Has(x), "x: %#x\n", x)
 				cntOr++
 				cntAnd++
 			} else {
 				require.Failf(t, "Failed", "Value of freq can't exceed 0x03. Found: %#x\n", freq)
 			}
 		}
+		if cntAnd != bitAnd.GetCardinality() {
+			uids := bitAnd.ToArray()
+			t.Logf("Len Uids: %d Card: %d cntAnd: %d. Occ: %d\n", len(uids), bitAnd.GetCardinality(), cntAnd, len(occ))
+
+			uidMap := make(map[uint64]struct{})
+			for _, u := range uids {
+				uidMap[u] = struct{}{}
+			}
+			for u := range occ {
+				delete(uidMap, u)
+			}
+			for x := range uidMap {
+				t.Logf("Remaining uids in UidMap: %d %#b\n", x, x)
+			}
+			require.FailNow(t, "Cardinality isn't matching")
+		}
 		require.Equal(t, cntOr, bitOr.GetCardinality())
-		// require.Equal(t, cntAnd, bitAnd.GetCardinality())
+		require.Equal(t, cntAnd, bitAnd.GetCardinality())
 	}
 }
 
