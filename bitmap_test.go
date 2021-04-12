@@ -346,3 +346,33 @@ func TestUint16(t *testing.T) {
 		}
 	}
 }
+
+func TestOr(t *testing.T) {
+	a := NewBitmap()
+	b := NewBitmap()
+	for i := 0; i < 50000; i++ {
+		val := rand.Int63n(1 << 25)
+		val2 := rand.Int63n(1 << 25)
+		a.Set(uint64(val))
+		b.Set(uint64(val2))
+	}
+	// t.Logf("a: %v", a.ToArray())
+	// t.Logf("b: %v", b.ToArray())
+	res := Or(a, b)
+	// t.Logf("res: %v", res.ToArray())
+	for _, key := range a.ToArray() {
+		require.True(t, res.Has(key))
+	}
+	for _, key := range b.ToArray() {
+		require.True(t, res.Has(key))
+	}
+}
+
+func TestCardinality(t *testing.T) {
+	a := NewBitmap()
+	n := 1 << 20
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i))
+	}
+	require.Equal(t, n, a.GetCardinality())
+}

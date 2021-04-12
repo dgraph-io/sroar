@@ -32,6 +32,7 @@ func (n node) setNumKeys(num int) {
 }
 
 func (n node) maxKey() uint64 {
+	// TODO: This should probably be n.numKeys() - 1
 	idx := n.numKeys()
 	// numKeys == index of the max key, because 0th index is being used for meta information.
 	if idx == 0 {
@@ -58,6 +59,7 @@ func (n node) search(k uint64) int {
 	N := n.numKeys()
 	lo, hi := 0, N-1
 	for lo+16 <= hi {
+		// TODO: This can overflow.
 		mid := (lo + hi) / 2
 		ki := n.key(mid)
 		// fmt.Printf("lo: %d mid: %d hi: %d. ki: %#x k: %#x\n", lo, mid, hi, ki, k)

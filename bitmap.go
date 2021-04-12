@@ -223,7 +223,8 @@ func (ra *Bitmap) GetCardinality() int {
 	for i := 0; i < N; i++ {
 		offset := ra.keys.val(i)
 		c := ra.getContainer(offset)
-		sz += int(c[indexCardinality])
+		// sz += int(c[indexCardinality])
+		sz += getCardinality(c)
 	}
 	return sz
 }
@@ -397,7 +398,8 @@ func And(a, b *Bitmap) *Bitmap {
 			bc := b.getContainer(off)
 
 			outc := containerAnd(ac, bc)
-			if outc[indexCardinality] > 0 {
+			// if outc[indexCardinality] > 0 {
+			if getCardinality(outc) > 0 {
 				outb := toByteSlice(outc)
 				offset := res.newContainer(uint16(len(outb)))
 				copy(res.data[offset:], outb)
@@ -423,7 +425,7 @@ func Or(a, b *Bitmap) *Bitmap {
 		ak := a.keys.key(ai)
 		ac := a.getContainer(a.keys.val(ai))
 
-		bk := a.keys.key(bi)
+		bk := b.keys.key(bi)
 		bc := b.getContainer(b.keys.val(bi))
 
 		if ak == bk {
@@ -466,4 +468,33 @@ func Or(a, b *Bitmap) *Bitmap {
 		bi++
 	}
 	return res
+}
+
+func FastAnd(bitmaps ...*Bitmap) *Bitmap {
+	b := NewBitmap()
+	if len(bitmaps) == 0 {
+		return b
+	} else if len(bitmaps) == 1 {
+		// TODO: Need a clone method here.
+		return bitmaps[0]
+	}
+	b = And(bitmaps[0], bitmaps[1])
+	for _, bm := range bitmaps[2:] {
+		b = And(b, bm)
+	}
+	return b
+}
+
+func FastOr(bitmaps ...*Bitmap) *Bitmap {
+	b := NewBitmap()
+	if len(bitmaps) == 0 {
+		return b
+	} else if len(bitmaps) == 1 {
+		return bitmaps[0]
+	}
+	b = Or(bitmaps[0], bitmaps[1])
+	for _, bm := range bitmaps[2:] {
+		b = Or(b, bm)
+	}
+	return b
 }

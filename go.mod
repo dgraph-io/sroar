@@ -1,4 +1,4 @@
-module sroar
+module roar
 
 go 1.14
 

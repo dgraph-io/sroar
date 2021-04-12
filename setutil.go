@@ -7,7 +7,7 @@ package roar
 
 // TODO: Add license from roaring bitmap library.
 
-func min16(a, b uint16) uint16 {
+func min(a, b int) int {
 	if a < b {
 		return a
 	}
