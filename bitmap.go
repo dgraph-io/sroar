@@ -21,12 +21,18 @@ import (
 	"math"
 	"strings"
 
+	"github.com/dgraph-io/dgo/x"
 	"github.com/dgraph-io/ristretto/z"
 )
 
 var (
-	empty   = make([]byte, 2<<16)
-	minSize = uint16(32)
+	empty          = make([]byte, 1<<25)
+	minSize        = uint16(32)
+	indexTotalSize = 0
+	indexNumKeys   = 1
+	indexOffset    = 2
+	indexUnused    = 3
+	indexStart     = 4
 )
 
 const mask = uint64(0xFFFFFFFFFFFF0000)
@@ -59,16 +65,17 @@ func NewBitmapWith(numKeys int) *Bitmap {
 	ra := &Bitmap{
 		// Each key must also keep an offset. So, we need to double the number of uint64s allocated.
 		// Plus, we need to make space for the first 2 uint64s to store the number of keys.
-		data: make([]byte, sizeInBytesU64(2*numKeys+2)),
+		data: make([]byte, sizeInBytesU64(2*numKeys+4)),
 	}
 	ra.keys = toUint64Slice(ra.data)
-	ra.keys.setAt(0, uint64(len(ra.data)))
+	ra.keys.setAt(indexTotalSize, uint64(len(ra.data)))
 
+	ra.keys[indexOffset] = 64 // for the first 8 uint64s (header 4 + 2kv pair)
 	// Always generate a container for key = 0x00. Otherwise, node gets confused about whether a
 	// zero key is a new key or not.
-	offset := ra.newContainer(minSizeOfContainer)
-	ra.keys.setAt(3, offset) // First two are for num keys. index=2 -> 0 key. index=3 -> offset.
-	ra.keys.setNumKeys(1)
+	offset := ra.newContainer(maxSizeOfContainer)
+	ra.keys.setAt(indexStart+1, offset) // First two are for num keys. index=2 -> 0 key. index=3 -> offset.
+	ra.keys.setNumKeys(indexNumKeys)
 
 	return ra
 }
@@ -107,9 +114,22 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	return offset + bySize
 }
 
+func (ra *Bitmap) NumExpand() uint64 {
+	return ra.keys[indexUnused]
+}
+
 func (ra *Bitmap) fastExpand(bySize uint16) {
+	if len(ra.data) > int(ra.keys[indexOffset])+int(bySize) {
+		// No need to expand, we have sufficient space.
+		return
+	}
+	ra.keys[indexUnused]++
+	expandSz := int(bySize)
+	if expandSz < len(ra.data) {
+		expandSz = len(ra.data)
+	}
 	prev := len(ra.keys) * 8
-	ra.data = append(ra.data, empty[:bySize]...)
+	ra.data = append(ra.data, empty[:expandSz]...)
 
 	// We should re-reference ra.keys correctly, because the underlying array might have been
 	// switched after append.
@@ -117,11 +137,12 @@ func (ra *Bitmap) fastExpand(bySize uint16) {
 }
 
 func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
-	left := ra.data[offset:]
+	dataOffset := ra.keys[indexOffset]
+	left := ra.data[offset:dataOffset]
 	prevHash := z.MemHash(left)
 
 	ra.fastExpand(bySize) // Expand the buffer.
-	right := ra.data[len(ra.data)-len(left):]
+	right := ra.data[offset+uint64(bySize) : dataOffset+uint64(bySize)]
 	copy(right, left) // Move data right.
 	afterHash := z.MemHash(right)
 
@@ -129,12 +150,16 @@ func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 	if afterHash != prevHash {
 		panic("We modified something")
 	}
+	ra.keys[indexOffset] += uint64(bySize)
 }
 
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
-	offset := uint64(len(ra.data))
+	// offset := uint64(len(ra.data))
+	offset := ra.keys[indexOffset]
 	ra.fastExpand(sz)
 	setSize(ra.data[offset:], sz)
+	ra.keys[indexOffset] += uint64(sz)
+	x.AssertTrue(sz == getSize(ra.data[offset:]))
 	return offset
 }
 
@@ -143,7 +168,7 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 	if sz == 0 {
 		panic("Container size should NOT be zero")
 	}
-	bySize := sz
+	bySize := uint16(sz)
 	if sz >= 4096 {
 		bySize = maxSizeOfContainer - sz
 	}
@@ -164,7 +189,7 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 }
 
 func (ra Bitmap) getContainer(offset uint64) []uint16 {
-	data := ra.data[offset:]
+	data := ra.data[offset:ra.keys[indexOffset]]
 	sz := getSize(data)
 	return toUint16Slice(data[:sz])
 }

@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"testing"
@@ -126,10 +128,20 @@ func benchmarkRealDataAggregate(b *testing.B, aggregator func(b []*Bitmap) int) 
 				aggregator(bitmaps)
 			}
 		})
+		break
 	}
 }
 
 func BenchmarkRealDataFastOr(b *testing.B) {
+	f, err := os.Create("./cpu-profile1")
+	if err != nil {
+		log.Fatal("could not create CPU profile: ", err)
+	}
+	defer f.Close()
+	if err := pprof.StartCPUProfile(f); err != nil {
+		log.Fatal("could not start CPU profile: ", err)
+	}
+	defer pprof.StopCPUProfile()
 	benchmarkRealDataAggregate(b, func(bitmaps []*Bitmap) int {
 		return FastOr(bitmaps...).GetCardinality()
 	})

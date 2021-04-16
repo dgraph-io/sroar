@@ -19,10 +19,11 @@ const (
 	indexSize        int = 0
 	indexType        int = 1
 	indexCardinality int = 2
-	indexUnused      int = 3
+	// Index 2 and 3 is used for cardinality.
+	// indexUnused      int = 3
 
-	minSizeOfContainer = 8 + 2    // 2 bytes for allowing one uint16 to be added.
-	maxSizeOfContainer = 8 + 8192 // 8192 for storing bitmap container.
+	minSizeOfContainer = 8 + 2     // 8B for header and 2 B for allowing one uint16 to be added.
+	maxSizeOfContainer = 8 + 1<<13 // 8B for header and 8KB for storing bitmap container.
 	startIdx           = uint16(4)
 )
 

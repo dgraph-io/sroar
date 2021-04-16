@@ -14,10 +14,10 @@ func (n node) uint64(start int) uint64 { return n[start] }
 
 // func (n node) uint32(start int) uint32 { return *(*uint32)(unsafe.Pointer(&n[start])) }
 
-func keyOffset(i int) int          { return 2 + 2*i }
-func valOffset(i int) int          { return 3 + 2*i }
-func (n node) numKeys() int        { return int(n[1]) }
-func (n node) maxKeys() int        { return len(n)/2 - 1 }
+func keyOffset(i int) int          { return indexStart + 2*i }
+func valOffset(i int) int          { return indexStart + 1 + 2*i }
+func (n node) numKeys() int        { return int(n[indexNumKeys]) }
+func (n node) maxKeys() int        { return (len(n) - indexStart) / 2 }
 func (n node) key(i int) uint64    { return n[keyOffset(i)] }
 func (n node) val(i int) uint64    { return n[valOffset(i)] }
 func (n node) data(i int) []uint64 { return n[keyOffset(i):keyOffset(i+1)] }

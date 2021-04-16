@@ -236,6 +236,20 @@ func TestBitmapZero(t *testing.T) {
 	require.Equal(t, 2, bm3.GetCardinality())
 }
 
+func TestSetGet(t *testing.T) {
+	bm := NewBitmap()
+	N := 600000
+	for i := 0; i < N; i++ {
+		bm.Set(uint64(i))
+	}
+	t.Log("Num of expands", bm.NumExpand())
+	t.Log("Set Complete")
+	for i := 0; i < N; i++ {
+		has := bm.Has(uint64(i))
+		require.True(t, has)
+	}
+}
+
 func TestBitmapOps(t *testing.T) {
 	M := int64(10000)
 	// smaller bitmap would always operate with [0, M) range.
@@ -271,8 +285,8 @@ func TestBitmapOps(t *testing.T) {
 			occ[smallx] |= 0x01 // binary 0001
 			occ[bigx] |= 0x02   // binary 0010
 		}
-		// require.Equal(t, len(smallMap), small.GetCardinality())
-		// require.Equal(t, len(bigMap), big.GetCardinality())
+		require.Equal(t, len(smallMap), small.GetCardinality())
+		require.Equal(t, len(bigMap), big.GetCardinality())
 
 		bitOr := Or(small, big)
 		bitAnd := And(small, big)
