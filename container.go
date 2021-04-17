@@ -98,6 +98,7 @@ func (c array) add(x uint16) bool {
 	N := getCardinality(c)
 	offset := int(startIdx) + idx
 
+	// fmt.Println(x, idx, N, offset)
 	if int(idx) < N {
 		if c[offset] == x {
 			return false
@@ -119,7 +120,7 @@ func (c array) andArray(other array) []uint16 {
 	setc := c.all()
 	seto := other.all()
 
-	out := make([]uint16, int(startIdx)+min)
+	out := make([]uint16, int(startIdx)+min+1)
 	num := uint16(intersection2by2(setc, seto, out[startIdx:]))
 
 	// Truncate out to how many values were found.

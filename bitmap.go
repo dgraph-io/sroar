@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	empty          = make([]byte, 1<<25)
+	empty          = make([]byte, 256<<20)
 	minSize        = uint16(32)
 	indexTotalSize = 0
 	indexNumKeys   = 1
@@ -124,9 +124,10 @@ func (ra *Bitmap) fastExpand(bySize uint16) {
 		return
 	}
 	ra.keys[indexUnused]++
-	expandSz := int(bySize)
-	if expandSz < len(ra.data) {
-		expandSz = len(ra.data)
+	expandSz := min(len(ra.data), len(empty))
+
+	if expandSz < int(bySize) {
+		expandSz = int(bySize)
 	}
 	prev := len(ra.keys) * 8
 	ra.data = append(ra.data, empty[:expandSz]...)
@@ -312,8 +313,6 @@ func (ra *Bitmap) Debug(x uint64) string {
 	c := ra.getContainer(off)
 	lo := uint16(x)
 
-	b.WriteString(fmt.Sprintf("x: %#x lo: %#x. offset: %d\n", x, lo, off))
-
 	switch c[indexType] {
 	case typeArray:
 	case typeBitmap:
@@ -406,6 +405,49 @@ func containerOr(ac, bc []uint16) []uint16 {
 	panic("containerAnd: We should not reach here")
 }
 
+func (ra *Bitmap) And(bm *Bitmap) {
+	a, b := ra, bm
+	ai, an := 0, a.keys.numKeys()
+	bi, bn := 0, b.keys.numKeys()
+
+	for ai < an && bi < bn {
+		ak := a.keys.key(ai)
+		bk := a.keys.key(bi)
+		if ak == bk {
+			// Do the intersection.
+			off := a.keys.val(ai)
+			ac := a.getContainer(off)
+
+			off = b.keys.val(bi)
+			bc := b.getContainer(off)
+			outc := containerAnd(ac, bc)
+			// if outc[indexCardinality] > 0 {
+			if getCardinality(outc) > 0 {
+				outb := toByteSlice(outc)
+				offset := a.newContainer(uint16(len(outb)))
+				copy(a.data[offset:], outb)
+				a.setKey(ak, offset)
+			}
+			ai++
+			bi++
+		} else if ak < bk {
+			// need to remove the container of a
+			off := a.keys.val(ai)
+			ac := a.getContainer(off)
+			setCardinality(ac, 0)
+			ai++
+		} else {
+			bi++
+		}
+	}
+	for ai < an {
+		off := a.keys.val(ai)
+		ac := a.getContainer(off)
+		setCardinality(ac, 0)
+		ai++
+	}
+}
+
 func And(a, b *Bitmap) *Bitmap {
 	ai, an := 0, a.keys.numKeys()
 	bi, bn := 0, b.keys.numKeys()
@@ -439,6 +481,33 @@ func And(a, b *Bitmap) *Bitmap {
 		}
 	}
 	return res
+}
+
+func (ra *Bitmap) Or(bm *Bitmap) {
+	bi, bn := 0, bm.keys.numKeys()
+	a, b := ra, bm
+
+	for bi < bn {
+		bk := b.keys.key(bi)
+		bc := b.getContainer(b.keys.val(bi))
+		idx := a.keys.search(bk)
+
+		// bk is not in a, just add container corresponding to bk to a.
+		if idx >= a.keys.numKeys() || a.keys.key(idx) != bk {
+			offset := a.newContainer(uint16(len(toByteSlice(bc))))
+			copy(a.getContainer(offset), bc)
+			a.setKey(bk, offset)
+		} else {
+			// bk is also present in a, do a container or.
+			//TODO: Need to cleanup the old container in a.
+			ac := a.getContainer(a.keys.val(idx))
+			c := containerOr(ac, bc)
+			offset := a.newContainer(uint16(len(toByteSlice(c))))
+			copy(a.getContainer(offset), c)
+			a.setKey(bk, offset)
+		}
+		bi++
+	}
 }
 
 func Or(a, b *Bitmap) *Bitmap {
@@ -505,21 +574,15 @@ func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 	}
 	b = And(bitmaps[0], bitmaps[1])
 	for _, bm := range bitmaps[2:] {
-		b = And(b, bm)
+		b.And(bm)
 	}
 	return b
 }
 
 func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	b := NewBitmap()
-	if len(bitmaps) == 0 {
-		return b
-	} else if len(bitmaps) == 1 {
-		return bitmaps[0]
-	}
-	b = Or(bitmaps[0], bitmaps[1])
-	for _, bm := range bitmaps[2:] {
-		b = Or(b, bm)
+	for _, bm := range bitmaps {
+		b.Or(bm)
 	}
 	return b
 }

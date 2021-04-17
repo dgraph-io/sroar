@@ -242,12 +242,26 @@ func TestSetGet(t *testing.T) {
 	for i := 0; i < N; i++ {
 		bm.Set(uint64(i))
 	}
-	t.Log("Num of expands", bm.NumExpand())
-	t.Log("Set Complete")
 	for i := 0; i < N; i++ {
 		has := bm.Has(uint64(i))
 		require.True(t, has)
 	}
+}
+
+func TestOr2(t *testing.T) {
+	bm := NewBitmap()
+	bm2 := NewBitmap()
+	N := 200000
+	M := 1 << 20
+	for i := 0; i < N; i++ {
+		v := rand.Int63n(int64(M))
+		bm.Set(uint64(v))
+		v = rand.Int63n(int64(M))
+		bm2.Set(uint64(v))
+	}
+	res := Or(bm, bm2)
+	bm.Or(bm2)
+	require.Equal(t, res.GetCardinality(), bm.GetCardinality())
 }
 
 func TestBitmapOps(t *testing.T) {
