@@ -414,20 +414,20 @@ func (ra *Bitmap) And(bm *Bitmap) {
 		ak := a.keys.key(ai)
 		bk := a.keys.key(bi)
 		if ak == bk {
-			// Do the intersection.
 			off := a.keys.val(ai)
 			ac := a.getContainer(off)
 
 			off = b.keys.val(bi)
 			bc := b.getContainer(off)
-			outc := containerAnd(ac, bc)
-			// if outc[indexCardinality] > 0 {
-			if getCardinality(outc) > 0 {
-				outb := toByteSlice(outc)
-				offset := a.newContainer(uint16(len(outb)))
-				copy(a.data[offset:], outb)
-				a.setKey(ak, offset)
-			}
+
+			// do the intersection
+			c := containerAnd(ac, bc)
+			outc := toByteSlice(c)
+
+			// create a new container and update the key offset to this container.
+			offset := a.newContainer(uint16(len(outc)))
+			copy(a.data[offset:], outc)
+			a.setKey(ak, offset)
 			ai++
 			bi++
 		} else if ak < bk {
