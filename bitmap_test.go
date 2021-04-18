@@ -469,4 +469,8 @@ func TestRemoveRange(t *testing.T) {
 
 	a.RemoveRange(uint64(N/2), uint64(N))
 	require.Equal(t, 0, a.GetCardinality())
+	a.Add(uint64(N / 4))
+	a.Add(uint64(N / 2))
+	a.Add(uint64(3 * N / 4))
+	require.Equal(t, 3, a.GetCardinality())
 }

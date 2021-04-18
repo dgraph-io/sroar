@@ -265,10 +265,10 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 
 	for k := k1 + 1; k < k2; k++ {
 		key := k << 16
-		offset, has := ra.keys.getValue(key)
+		_, has := ra.keys.getValue(key)
 		if has {
-			ac := ra.getContainer(offset)
-			setCardinality(ac, 0)
+			off := ra.newContainer(minSizeOfContainer)
+			ra.setKey(key, off)
 		}
 	}
 	for x := lo; x <= hi; x++ {
@@ -505,18 +505,16 @@ func (ra *Bitmap) And(bm *Bitmap) {
 			bi++
 		} else if ak < bk {
 			// need to remove the container of a
-			off := a.keys.val(ai)
-			ac := a.getContainer(off)
-			setCardinality(ac, 0)
+			off := a.newContainer(minSizeOfContainer)
+			a.setKey(ak, off)
 			ai++
 		} else {
 			bi++
 		}
 	}
 	for ai < an {
-		off := a.keys.val(ai)
-		ac := a.getContainer(off)
-		setCardinality(ac, 0)
+		off := a.newContainer(minSizeOfContainer)
+		a.setKey(a.keys.key(ai), off)
 		ai++
 	}
 }

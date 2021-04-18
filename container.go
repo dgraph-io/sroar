@@ -121,8 +121,9 @@ func (c array) remove(x uint16) bool {
 		}
 		copy(c[offset:], c[offset+1:])
 		setCardinality(c, N-1)
+		return true
 	}
-	return true
+	return false
 }
 
 // TODO: Figure out how memory allocation would work in these situations. Perhaps use allocator here?
