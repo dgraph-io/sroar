@@ -114,18 +114,12 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	return offset + bySize
 }
 
-func (ra *Bitmap) NumExpand() uint64 {
-	return ra.keys[indexUnused]
-}
-
 func (ra *Bitmap) fastExpand(bySize uint16) {
 	if len(ra.data) > int(ra.keys[indexOffset])+int(bySize) {
 		// No need to expand, we have sufficient space.
 		return
 	}
-	ra.keys[indexUnused]++
 	expandSz := min(len(ra.data), len(empty))
-
 	if expandSz < int(bySize) {
 		expandSz = int(bySize)
 	}
@@ -195,7 +189,7 @@ func (ra Bitmap) getContainer(offset uint64) []uint16 {
 	return toUint16Slice(data[:sz])
 }
 
-func (ra *Bitmap) Set(x uint64) bool {
+func (ra *Bitmap) Add(x uint64) bool {
 	key := x & mask
 	offset, has := ra.keys.getValue(key)
 	if !has {
@@ -243,13 +237,64 @@ func (ra *Bitmap) Has(x uint64) bool {
 	return false
 }
 
+func (ra *Bitmap) Remove(x uint64) bool {
+	key := x & mask
+	offset, has := ra.keys.getValue(key)
+	if !has {
+		return false
+	}
+	c := ra.getContainer(offset)
+	switch c[indexType] {
+	case typeArray:
+		p := array(c)
+		return p.remove(uint16(x))
+	case typeBitmap:
+		b := bitmap(c)
+		return b.remove(uint16(x))
+	}
+	return true
+}
+
+// TODO: optimize this function. Also, introduce scootLeft probably.
+func (ra *Bitmap) RemoveRange(lo, hi uint64) {
+	if lo > hi {
+		panic("lo should not be more than hi")
+	}
+	k1 := lo >> 16
+	k2 := hi >> 16
+
+	for k := k1 + 1; k < k2; k++ {
+		key := k << 16
+		offset, has := ra.keys.getValue(key)
+		if has {
+			ac := ra.getContainer(offset)
+			setCardinality(ac, 0)
+		}
+	}
+	for x := lo; x <= hi; x++ {
+		k := x >> 16
+		if k == k1 {
+			ra.Remove(x)
+		} else {
+			break
+		}
+	}
+	for x := hi; x >= lo; x-- {
+		k := x >> 16
+		if k == k2 {
+			ra.Remove(x)
+		} else {
+			break
+		}
+	}
+}
+
 func (ra *Bitmap) GetCardinality() int {
 	N := ra.keys.numKeys()
 	var sz int
 	for i := 0; i < N; i++ {
 		offset := ra.keys.val(i)
 		c := ra.getContainer(offset)
-		// sz += int(c[indexCardinality])
 		sz += getCardinality(c)
 	}
 	return sz
@@ -493,7 +538,6 @@ func And(a, b *Bitmap) *Bitmap {
 			bc := b.getContainer(off)
 
 			outc := containerAnd(ac, bc)
-			// if outc[indexCardinality] > 0 {
 			if getCardinality(outc) > 0 {
 				outb := toByteSlice(outc)
 				offset := res.newContainer(uint16(len(outb)))
@@ -653,12 +697,9 @@ func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 	b := NewBitmap()
 	if len(bitmaps) == 0 {
 		return b
-	} else if len(bitmaps) == 1 {
-		// TODO: Need a clone method here.
-		return bitmaps[0]
 	}
-	b = And(bitmaps[0], bitmaps[1])
-	for _, bm := range bitmaps[2:] {
+	b = bitmaps[0]
+	for _, bm := range bitmaps[1:] {
 		b.And(bm)
 	}
 	return b

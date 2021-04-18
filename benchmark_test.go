@@ -34,7 +34,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 
 		var i uint64
 		for i = 0; i <= max-incr; i += incr {
-			rb.Set(i)
+			rb.Add(i)
 		}
 
 		bitmaps = append(bitmaps, rb)
@@ -54,14 +54,14 @@ func BenchmarkIntersectionRoaring(b *testing.B) {
 	sz := int64(150000)
 	initsize := 65000
 	for i := 0; i < initsize; i++ {
-		s1.Set(uint64(r.Int63n(sz)))
+		s1.Add(uint64(r.Int63n(sz)))
 	}
 
 	s2 := NewBitmap()
 	sz = int64(100000000)
 	initsize = 65000
 	for i := 0; i < initsize; i++ {
-		s2.Set(uint64(r.Int63n((sz))))
+		s2.Add(uint64(r.Int63n((sz))))
 	}
 	b.StartTimer()
 
@@ -81,6 +81,6 @@ func BenchmarkSetRoaring(b *testing.B) {
 	s := NewBitmap()
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		s.Set(uint64(r.Int63n(sz)))
+		s.Add(uint64(r.Int63n(sz)))
 	}
 }

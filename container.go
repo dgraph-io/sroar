@@ -71,7 +71,6 @@ type array []uint16
 // If the element > than all elements present, then N is returned where N = cardinality of the
 // container.
 func (c array) find(x uint16) int {
-	// N := c[indexCardinality]
 	N := getCardinality(c)
 	for i := int(startIdx); i < int(startIdx)+N; i++ {
 		if len(c) <= int(i) {
@@ -84,7 +83,6 @@ func (c array) find(x uint16) int {
 	return N
 }
 func (c array) has(x uint16) bool {
-	// N := c[indexCardinality]
 	N := getCardinality(c)
 	idx := c.find(x)
 	if idx == N {
@@ -95,7 +93,6 @@ func (c array) has(x uint16) bool {
 
 func (c array) add(x uint16) bool {
 	idx := c.find(x)
-	// N := c[indexCardinality]
 	N := getCardinality(c)
 	offset := int(startIdx) + idx
 
@@ -109,13 +106,27 @@ func (c array) add(x uint16) bool {
 	}
 	c[offset] = x
 	incrCardinality(c)
-	// c[indexCardinality] += 1
+	return true
+}
+
+func (c array) remove(x uint16) bool {
+	idx := c.find(x)
+	N := getCardinality(c)
+	offset := int(startIdx) + idx
+
+	// fmt.Println(x, idx, N, offset)
+	if int(idx) < N {
+		if c[offset] != x {
+			return false
+		}
+		copy(c[offset:], c[offset+1:])
+		setCardinality(c, N-1)
+	}
 	return true
 }
 
 // TODO: Figure out how memory allocation would work in these situations. Perhaps use allocator here?
 func (c array) andArray(other array) []uint16 {
-	// min := min16(c[indexCardinality], other[indexCardinality])
 	min := min(getCardinality(c), getCardinality(other))
 
 	setc := c.all()
@@ -128,7 +139,6 @@ func (c array) andArray(other array) []uint16 {
 	out = out[:startIdx+num+1]
 	out[indexType] = typeArray
 	out[indexSize] = uint16(sizeInBytesU16(len(out)))
-	// out[indexCardinality] = uint16(num)
 	setCardinality(out, int(num))
 	return out
 }
@@ -161,14 +171,12 @@ func (c array) andNotArray(other array) []uint16 {
 }
 
 func (c array) orArray(other array) []uint16 {
-	// max := c[indexCardinality] + other[indexCardinality]
 	max := getCardinality(c) + getCardinality(other)
 	if max > 4096 {
 		// Use bitmap container.
 		out := c.toBitmapContainer()
 		data := out[startIdx:]
 
-		// num := int(out[indexCardinality])
 		num := getCardinality(out)
 		for _, x := range other.all() {
 			idx := x / 16
@@ -178,7 +186,6 @@ func (c array) orArray(other array) []uint16 {
 			after := bits.OnesCount16(data[idx])
 			num += after - before
 		}
-		// out[indexCardinality] = uint16(num)
 		setCardinality(out, num)
 		// For now, just keep it as a bitmap. No need to change if the
 		// cardinality is smaller than 4096.
@@ -190,7 +197,6 @@ func (c array) orArray(other array) []uint16 {
 	num := union2by2(c.all(), other.all(), out[startIdx:])
 	out[indexType] = typeArray
 	out[indexSize] = uint16(len(out) * 2)
-	// out[indexCardinality] = uint16(num)
 	setCardinality(out, num)
 	return out
 }
@@ -198,7 +204,6 @@ func (c array) orArray(other array) []uint16 {
 var tmp = make([]uint16, 8192)
 
 func (c array) andBitmap(other bitmap) []uint16 {
-	// out := make([]uint16, startIdx+c[indexCardinality]+2) // some extra space.
 	out := make([]uint16, int(startIdx)+getCardinality(c)+2) // some extra space.
 	out[indexType] = typeArray
 
@@ -211,7 +216,6 @@ func (c array) andBitmap(other bitmap) []uint16 {
 	// Ensure we have at least one empty slot at the end.
 	res := out[:pos+1]
 	res[indexSize] = uint16(len(res) * 2)
-	// res[indexCardinality] = pos - startIdx
 	setCardinality(res, int(pos-startIdx))
 	return res
 }
@@ -238,19 +242,16 @@ func (c array) andNotBitmap(other bitmap) []uint16 {
 }
 
 func (c array) isFull() bool {
-	// N := c[indexCardinality]
 	N := getCardinality(c)
 	return int(startIdx)+N >= len(c)
 }
 
 func (c array) all() []uint16 {
-	// N := c[indexCardinality]
 	N := getCardinality(c)
 	return c[startIdx : int(startIdx)+N]
 }
 
 func (c array) minimum() uint16 {
-	// N := c[indexCardinality]
 	N := getCardinality(c)
 	if N == 0 {
 		return 0
@@ -259,7 +260,6 @@ func (c array) minimum() uint16 {
 }
 
 func (c array) maximum() uint16 {
-	// N := c[indexCardinality]
 	N := getCardinality(c)
 	if N == 0 {
 		return 0
@@ -272,7 +272,6 @@ func (c array) toBitmapContainer() []uint16 {
 	b := bitmap(toUint16Slice(buf))
 	b[indexSize] = maxSizeOfContainer
 	b[indexType] = typeBitmap
-	// b[indexCardinality] = c[indexCardinality]
 	setCardinality(b, getCardinality(c))
 
 	data := b[startIdx:]
@@ -280,9 +279,7 @@ func (c array) toBitmapContainer() []uint16 {
 		idx := x / 16
 		pos := x % 16
 		data[idx] |= bitmapMask[pos]
-		// num += bits.OnesCount16(data[idx])
 	}
-	// b[indexCardinality] = uint16(num)
 	return b
 }
 
@@ -315,9 +312,21 @@ func (b bitmap) add(x uint16) bool {
 	}
 
 	b[startIdx+idx] |= bitmapMask[pos]
-	// b[indexCardinality]++
 	incrCardinality(b)
 	return true
+}
+
+func (b bitmap) remove(x uint16) bool {
+	idx := x >> 4
+	pos := x & 0xF
+
+	c := getCardinality(b)
+	if has := b[startIdx+idx] & bitmapMask[pos]; has > 0 {
+		b[startIdx+idx] ^= bitmapMask[pos]
+		setCardinality(b, c-1)
+		return true
+	}
+	return false
 }
 
 func (b bitmap) has(x uint16) bool {
@@ -339,7 +348,6 @@ func (b bitmap) andBitmap(other bitmap) []uint16 {
 		num += bits.OnesCount16(out[i])
 	}
 	setCardinality(out, num)
-	// out[indexCardinality] = uint16(num)
 	return out
 }
 
@@ -355,7 +363,6 @@ func (b bitmap) orBitmap(other bitmap) []uint16 {
 		data[i] |= v
 		num += bits.OnesCount16(data[i])
 	}
-	// out[indexCardinality] = uint16(num)
 	setCardinality(out, num)
 	return out
 }
@@ -380,7 +387,6 @@ func (b bitmap) orArray(other array) []uint16 {
 	out := make([]uint16, maxSizeOfContainer)
 	copy(out, b)
 
-	// num := int(out[indexCardinality])
 	num := getCardinality(out)
 	for _, x := range other.all() {
 		idx := x / 16
@@ -391,7 +397,6 @@ func (b bitmap) orArray(other array) []uint16 {
 		after := bits.OnesCount16(out[4+idx])
 		num += after - before
 	}
-	// out[indexCardinality] = uint16(num)
 	setCardinality(out, num)
 	return out
 }
@@ -423,7 +428,6 @@ func (b bitmap) isFull() bool {
 }
 
 func (b bitmap) minimum() uint16 {
-	// N := b[indexCardinality]
 	N := getCardinality(b)
 	if N == 0 {
 		return 0
@@ -439,7 +443,6 @@ func (b bitmap) minimum() uint16 {
 }
 
 func (b bitmap) maximum() uint16 {
-	// N := b[indexCardinality]
 	N := getCardinality(b)
 	if N == 0 {
 		return 0

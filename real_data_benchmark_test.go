@@ -99,7 +99,7 @@ func retrieveRealDataBitmaps(datasetName string, optimize bool) ([]*Bitmap, erro
 					elemStr, f.Name, datasetName, err)
 			}
 
-			b.Set(uint64(e))
+			b.Add(uint64(e))
 		}
 
 		// if optimize {
