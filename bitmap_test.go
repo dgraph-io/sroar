@@ -236,18 +236,6 @@ func TestBitmapZero(t *testing.T) {
 	require.Equal(t, 2, bm3.GetCardinality())
 }
 
-func TestSetGet(t *testing.T) {
-	bm := NewBitmap()
-	N := 600000
-	for i := 0; i < N; i++ {
-		bm.Set(uint64(i))
-	}
-	for i := 0; i < N; i++ {
-		has := bm.Has(uint64(i))
-		require.True(t, has)
-	}
-}
-
 func TestBitmapOps(t *testing.T) {
 	M := int64(10000)
 	// smaller bitmap would always operate with [0, M) range.
@@ -359,11 +347,23 @@ func TestUint16(t *testing.T) {
 	}
 }
 
+func TestSetGet(t *testing.T) {
+	bm := NewBitmap()
+	N := int(1e6)
+	for i := 0; i < N; i++ {
+		bm.Set(uint64(i))
+	}
+	for i := 0; i < N; i++ {
+		has := bm.Has(uint64(i))
+		require.True(t, has)
+	}
+}
+
 func TestAnd(t *testing.T) {
 	a := NewBitmap()
 	b := NewBitmap()
 
-	N := 1000000
+	N := int(1e7)
 	for i := 0; i < N; i++ {
 		if i%2 == 0 {
 			a.Set(uint64(i))
@@ -379,11 +379,32 @@ func TestAnd(t *testing.T) {
 	require.Equal(t, 0, a.GetCardinality())
 }
 
+func TestAndNot(t *testing.T) {
+	a := NewBitmap()
+	b := NewBitmap()
+
+	N := int(1e7)
+	for i := 0; i < N; i++ {
+		if i < N/2 {
+			a.Set(uint64(i))
+		} else {
+			b.Set(uint64(i))
+		}
+	}
+	require.Equal(t, N/2, a.GetCardinality())
+	require.Equal(t, N/2, b.GetCardinality())
+
+	a.AndNot(b)
+	require.Equal(t, N, a.GetCardinality())
+	a.AndNot(b)
+	require.Equal(t, N/2, a.GetCardinality())
+}
+
 func TestOr(t *testing.T) {
 	a := NewBitmap()
 	b := NewBitmap()
 
-	N := 1000000
+	N := int(1e7)
 	for i := 0; i < N; i++ {
 		if i%2 == 0 {
 			a.Set(uint64(i))
@@ -398,22 +419,6 @@ func TestOr(t *testing.T) {
 	a.Or(b)
 	require.Equal(t, N, a.GetCardinality())
 
-}
-
-func TestOr2(t *testing.T) {
-	bm := NewBitmap()
-	bm2 := NewBitmap()
-	N := 200000
-	M := 1 << 20
-	for i := 0; i < N; i++ {
-		v := rand.Int63n(int64(M))
-		bm.Set(uint64(v))
-		v = rand.Int63n(int64(M))
-		bm2.Set(uint64(v))
-	}
-	res := Or(bm, bm2)
-	bm.Or(bm2)
-	require.Equal(t, res.GetCardinality(), bm.GetCardinality())
 }
 
 func TestCardinality(t *testing.T) {

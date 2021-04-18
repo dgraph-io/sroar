@@ -373,9 +373,37 @@ func containerAnd(ac, bc []uint16) []uint16 {
 	if at == typeBitmap && bt == typeBitmap {
 		left := bitmap(ac)
 		right := bitmap(bc)
-		return left.and(right)
+		return left.andBitmap(right)
 	}
 	panic("containerAnd: We should not reach here")
+}
+
+func containerAndNot(ac, bc []uint16) []uint16 {
+	at := ac[indexType]
+	bt := bc[indexType]
+
+	if at == typeArray && bt == typeArray {
+		left := array(ac)
+		right := array(bc)
+		return left.andNotArray(right)
+	}
+	if at == typeArray && bt == typeBitmap {
+		left := array(ac)
+		right := bitmap(bc)
+		return left.andNotBitmap(right)
+	}
+	if at == typeBitmap && bt == typeArray {
+		left := bitmap(ac)
+		right := array(bc)
+		out := right.andNotBitmap(left)
+		return out
+	}
+	if at == typeBitmap && bt == typeBitmap {
+		left := bitmap(ac)
+		right := bitmap(bc)
+		return left.andNotBitmap(right)
+	}
+	panic("containerAndNot: We should not reach here")
 }
 
 func containerOr(ac, bc []uint16) []uint16 {
@@ -481,6 +509,63 @@ func And(a, b *Bitmap) *Bitmap {
 		}
 	}
 	return res
+}
+
+func (ra *Bitmap) AndNot(bm *Bitmap) {
+	a, b := ra, bm
+	ai, an := 0, a.keys.numKeys()
+	bi, bn := 0, b.keys.numKeys()
+
+	for ai < an && bi < bn {
+		ak := a.keys.key(ai)
+		bk := b.keys.key(bi)
+		if ak == bk {
+			off := a.keys.val(ai)
+			ac := a.getContainer(off)
+
+			off = b.keys.val(bi)
+			bc := b.getContainer(off)
+
+			// do the intersection
+			c := containerAndNot(ac, bc)
+			outc := toByteSlice(c)
+
+			// create a new container and update the key offset to this container.
+			offset := a.newContainer(uint16(len(outc)))
+			copy(a.data[offset:], outc)
+			a.setKey(ak, offset)
+			ai++
+			bi++
+		} else if ak < bk {
+			// nothing to be done
+			ai++
+		} else {
+			// ak > bk
+			// need to add this b container to a
+			bk := b.keys.key(bi)
+			off := b.keys.val(bi)
+			bc := b.getContainer(off)
+
+			outb := toByteSlice(bc)
+			offset := a.newContainer(uint16(len(outb)))
+			copy(a.data[offset:], outb)
+			a.setKey(bk, offset)
+			bi++
+		}
+	}
+
+	// pick up all the keys left in b.
+	for bi < bn {
+		bk := b.keys.key(bi)
+		off := b.keys.val(bi)
+		bc := b.getContainer(off)
+
+		outb := toByteSlice(bc)
+		offset := a.newContainer(uint16(len(outb)))
+		copy(a.data[offset:], outb)
+		a.setKey(bk, offset)
+		bi++
+	}
 }
 
 func (ra *Bitmap) Or(bm *Bitmap) {

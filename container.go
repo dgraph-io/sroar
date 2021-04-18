@@ -56,10 +56,11 @@ func incrCardinality(data []uint16) {
 
 func setCardinality(data []uint16, c int) {
 	if c > math.MaxUint16 {
-		data[indexCardinality+1] = 1
 		data[indexCardinality] = math.MaxUint16
+		data[indexCardinality+1] = 1
 	} else {
 		data[indexCardinality] = uint16(c)
+		data[indexCardinality+1] = 0
 	}
 }
 
@@ -132,6 +133,33 @@ func (c array) andArray(other array) []uint16 {
 	return out
 }
 
+func (c array) andNotArray(other array) []uint16 {
+	var setOr []uint16
+	var setAnd []uint16
+
+	max := getCardinality(c) + getCardinality(other)
+	orRes := c.orArray(other)
+
+	// orArray can result in bitmap.
+	if orRes[indexType] == typeBitmap {
+		setOr = bitmap(orRes).ToArray()
+	} else {
+		setOr = array(orRes).all()
+	}
+	andRes := array(c.andArray(other))
+	setAnd = andRes.all()
+
+	out := make([]uint16, int(startIdx)+max+1)
+	num := uint16(difference(setOr, setAnd, out[startIdx:]))
+
+	// Truncate out to how many values were found.
+	out = out[:startIdx+num+1]
+	out[indexType] = typeArray
+	out[indexSize] = uint16(sizeInBytesU16(len(out)))
+	setCardinality(out, int(num))
+	return out
+}
+
 func (c array) orArray(other array) []uint16 {
 	// max := c[indexCardinality] + other[indexCardinality]
 	max := getCardinality(c) + getCardinality(other)
@@ -186,6 +214,27 @@ func (c array) andBitmap(other bitmap) []uint16 {
 	// res[indexCardinality] = pos - startIdx
 	setCardinality(res, int(pos-startIdx))
 	return res
+}
+
+func (c array) andNotBitmap(other bitmap) []uint16 {
+	bm := c.toBitmapContainer()
+	return bitmap(bm).andNotBitmap(other)
+
+	// TODO: Write an optmized version
+	// out := make([]uint16, int(startIdx)+getCardinality(c)+2) // some extra space.
+	// out[indexType] = typeArray
+
+	// pos := startIdx
+	// for _, x := range c.all() {
+	// 	out[pos] = x
+	// 	pos += ^other.bitValue(x)
+	// }
+
+	// // Ensure we have at least one empty slot at the end.
+	// res := out[:pos+1]
+	// res[indexSize] = uint16(len(res) * 2)
+	// setCardinality(res, int(pos-startIdx))
+	// return res
 }
 
 func (c array) isFull() bool {
@@ -280,7 +329,7 @@ func (b bitmap) has(x uint16) bool {
 }
 
 // TODO: This can perhaps be using SIMD instructions.
-func (b bitmap) and(other bitmap) []uint16 {
+func (b bitmap) andBitmap(other bitmap) []uint16 {
 	out := make([]uint16, maxSizeOfContainer)
 	out[indexSize] = maxSizeOfContainer
 	out[indexType] = typeBitmap
@@ -297,6 +346,8 @@ func (b bitmap) and(other bitmap) []uint16 {
 func (b bitmap) orBitmap(other bitmap) []uint16 {
 	out := make([]uint16, maxSizeOfContainer)
 	copy(out, b) // Copy over first.
+	out[indexSize] = maxSizeOfContainer
+	out[indexType] = typeBitmap
 
 	var num int
 	data := out[startIdx:]
@@ -305,6 +356,22 @@ func (b bitmap) orBitmap(other bitmap) []uint16 {
 		num += bits.OnesCount16(data[i])
 	}
 	// out[indexCardinality] = uint16(num)
+	setCardinality(out, num)
+	return out
+}
+
+func (b bitmap) andNotBitmap(other bitmap) []uint16 {
+	out := make([]uint16, maxSizeOfContainer)
+	copy(out, b) // Copy over first.
+	out[indexSize] = maxSizeOfContainer
+	out[indexType] = typeBitmap
+
+	var num int
+	data := out[startIdx:]
+	for i, v := range other[startIdx:] {
+		data[i] = (data[i] | v) ^ (data[i] & v)
+		num += bits.OnesCount16(data[i])
+	}
 	setCardinality(out, num)
 	return out
 }
