@@ -73,9 +73,9 @@ func NewBitmapWith(numKeys int) *Bitmap {
 	ra.keys[indexOffset] = 64 // for the first 8 uint64s (header 4 + 2kv pair)
 	// Always generate a container for key = 0x00. Otherwise, node gets confused about whether a
 	// zero key is a new key or not.
-	offset := ra.newContainer(maxSizeOfContainer)
+	offset := ra.newContainer(minSizeOfContainer)
 	ra.keys.setAt(indexStart+1, offset) // First two are for num keys. index=2 -> 0 key. index=3 -> offset.
-	ra.keys.setNumKeys(indexNumKeys)
+	ra.keys.setNumKeys(1)
 
 	return ra
 }
