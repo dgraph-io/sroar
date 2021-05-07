@@ -23,7 +23,7 @@ const (
 	// indexUnused      int = 3
 
 	minSizeOfContainer = 8 + 2     // 8B for header and 2 B for allowing one uint16 to be added.
-	maxSizeOfContainer = 8 + 1<<13 // 8B for header and 8KB for storing bitmap container.
+	maxSizeOfContainer = 8 + 8<<10 // 8B for header and 8KB for storing bitmap container.
 	startIdx           = uint16(4)
 )
 
@@ -221,25 +221,10 @@ func (c array) andBitmap(other bitmap) []uint16 {
 	return res
 }
 
+// TODO: Write an optmized version of this function.
 func (c array) andNotBitmap(other bitmap) []uint16 {
 	bm := c.toBitmapContainer()
 	return bitmap(bm).andNotBitmap(other)
-
-	// TODO: Write an optmized version
-	// out := make([]uint16, int(startIdx)+getCardinality(c)+2) // some extra space.
-	// out[indexType] = typeArray
-
-	// pos := startIdx
-	// for _, x := range c.all() {
-	// 	out[pos] = x
-	// 	pos += ^other.bitValue(x)
-	// }
-
-	// // Ensure we have at least one empty slot at the end.
-	// res := out[:pos+1]
-	// res[indexSize] = uint16(len(res) * 2)
-	// setCardinality(res, int(pos-startIdx))
-	// return res
 }
 
 func (c array) isFull() bool {

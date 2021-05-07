@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	empty          = make([]byte, 256<<20)
+	empty          = make([]byte, 32<<20)
 	minSize        = uint16(32)
 	indexTotalSize = 0
 	indexNumKeys   = 1
@@ -149,7 +149,6 @@ func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 }
 
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
-	// offset := uint64(len(ra.data))
 	offset := ra.keys[indexOffset]
 	ra.fastExpand(sz)
 	setSize(ra.data[offset:], sz)
@@ -692,11 +691,10 @@ func Or(a, b *Bitmap) *Bitmap {
 }
 
 func FastAnd(bitmaps ...*Bitmap) *Bitmap {
-	b := NewBitmap()
 	if len(bitmaps) == 0 {
-		return b
+		return NewBitmap()
 	}
-	b = bitmaps[0]
+	b := bitmaps[0]
 	for _, bm := range bitmaps[1:] {
 		b.And(bm)
 	}
