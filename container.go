@@ -19,7 +19,8 @@ const (
 	indexSize        int = 0
 	indexType        int = 1
 	indexCardinality int = 2
-	// Index 2 and 3 is used for cardinality.
+	// Index 2 and 3 is used for cardinality. We need 2 uint16s to store cardinality because
+	// 2^16 will not fit in uint16.
 	// indexUnused      int = 3
 
 	minSizeOfContainer = 8 + 2     // 8B for header and 2 B for allowing one uint16 to be added.

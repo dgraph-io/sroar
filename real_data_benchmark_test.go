@@ -99,7 +99,7 @@ func retrieveRealDataBitmaps(datasetName string, optimize bool) ([]*Bitmap, erro
 					elemStr, f.Name, datasetName, err)
 			}
 
-			b.Add(uint64(e))
+			b.Set(uint64(e))
 		}
 
 		bitmaps[i] = b
