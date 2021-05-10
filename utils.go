@@ -81,9 +81,6 @@ func toUint64Slice(b []uint16) []uint64 {
 	return u64s
 }
 
-func sizeInBytesU16(n int) int { return n * 2 }
-func sizeInBytesU64(n int) int { return n * 8 }
-
 //go:linkname memclrNoHeapPointers runtime.memclrNoHeapPointers
 func memclrNoHeapPointers(p unsafe.Pointer, n uintptr)
 

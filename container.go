@@ -23,11 +23,13 @@ const (
 	indexCardinality int = 2
 	// Index 2 and 3 is used for cardinality. We need 2 uint16s to store cardinality because
 	// 2^16 will not fit in uint16.
-	// indexUnused      int = 3
+	startIdx uint16 = 4
 
-	minSizeOfContainer = (8 + 2) / 2     // 8B for header and 2B for allowing one uint16 to be added. In Uint16.
-	maxSizeOfContainer = (8 + 8<<10) / 2 // 8B for header and 8KB for storing bitmap container. In Uint16.
-	startIdx           = uint16(4)
+	minSizeOfContainer = 4 + 1 // 4 for header and 1 for one uint16. In Uint16.
+	// Bitmap container can contain 2^16 integers. Each integer would use one bit to represent.
+	// Given that our data is represented in []uint16s, that'd mean the size of container to store
+	// it would be divided by 16.
+	maxSizeOfContainer = 4 + (1<<16)/16 // 4 for header and 4096 for storing bitmap container. In Uint16.
 )
 
 // getSize returns the size of container in bytes. The way to calculate the uint16 data
@@ -37,6 +39,7 @@ func setSize(data []uint16, sz uint16)   { data[0] = sz }
 func dataAt(data []uint16, i int) uint16 { return data[int(startIdx)+i] }
 
 func getCardinality(data []uint16) int {
+	// This sum has to be done using two ints to avoid overflow.
 	return int(data[indexCardinality]) + int(data[indexCardinality+1])
 }
 
@@ -132,7 +135,7 @@ func (c array) andArray(other array) []uint16 {
 	// Truncate out to how many values were found.
 	out = out[:startIdx+num+1]
 	out[indexType] = typeArray
-	out[indexSize] = uint16(sizeInBytesU16(len(out)))
+	out[indexSize] = uint16(len(out))
 	setCardinality(out, int(num))
 	return out
 }
@@ -159,7 +162,7 @@ func (c array) andNotArray(other array) []uint16 {
 	// Truncate out to how many values were found.
 	out = out[:startIdx+num+1]
 	out[indexType] = typeArray
-	out[indexSize] = uint16(sizeInBytesU16(len(out)))
+	out[indexSize] = uint16(len(out))
 	setCardinality(out, int(num))
 	return out
 }
@@ -190,7 +193,7 @@ func (c array) orArray(other array) []uint16 {
 	out := make([]uint16, int(startIdx)+max)
 	num := union2by2(c.all(), other.all(), out[startIdx:])
 	out[indexType] = typeArray
-	out[indexSize] = uint16(len(out) * 2)
+	out[indexSize] = uint16(len(out))
 	setCardinality(out, num)
 	return out
 }
@@ -209,7 +212,7 @@ func (c array) andBitmap(other bitmap) []uint16 {
 
 	// Ensure we have at least one empty slot at the end.
 	res := out[:pos+1]
-	res[indexSize] = uint16(len(res) * 2)
+	res[indexSize] = uint16(len(res))
 	setCardinality(res, int(pos-startIdx))
 	return res
 }
@@ -247,8 +250,8 @@ func (c array) maximum() uint16 {
 }
 
 func (c array) toBitmapContainer() []uint16 {
-	buf := make([]byte, maxSizeOfContainer)
-	b := bitmap(toUint16Slice(buf))
+	buf := make([]uint16, maxSizeOfContainer)
+	b := bitmap(buf)
 	b[indexSize] = maxSizeOfContainer
 	b[indexType] = typeBitmap
 	setCardinality(b, getCardinality(c))
@@ -265,7 +268,7 @@ func (c array) toBitmapContainer() []uint16 {
 func (c array) String() string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Size: %d\n", c[0]))
-	for i, val := range c[4:] {
+	for i, val := range c[startIdx:] {
 		b.WriteString(fmt.Sprintf("%d: %d\n", i, val))
 	}
 	return b.String()
