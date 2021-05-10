@@ -62,20 +62,20 @@ func toUint16Slice(b []byte) (result []uint16) {
 	return u16s
 }
 
-func toUint32Slice(b []byte) (result []uint32) {
+func toUint32Slice(b []uint16) (result []uint32) {
 	var u32s []uint32
 	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u32s))
-	hdr.Len = len(b) / 4
+	hdr.Len = len(b) / 2
 	hdr.Cap = hdr.Len
 	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
 	return u32s
 }
 
 // BytesToU32Slice converts the given byte slice to uint32 slice
-func toUint64Slice(b []byte) []uint64 {
+func toUint64Slice(b []uint16) []uint64 {
 	var u64s []uint64
 	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u64s))
-	hdr.Len = len(b) / 8
+	hdr.Len = len(b) / 4
 	hdr.Cap = hdr.Len
 	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
 	return u64s
@@ -83,3 +83,14 @@ func toUint64Slice(b []byte) []uint64 {
 
 func sizeInBytesU16(n int) int { return n * 2 }
 func sizeInBytesU64(n int) int { return n * 8 }
+
+//go:linkname memclrNoHeapPointers runtime.memclrNoHeapPointers
+func memclrNoHeapPointers(p unsafe.Pointer, n uintptr)
+
+func Memclr(b []uint16) {
+	if len(b) == 0 {
+		return
+	}
+	p := unsafe.Pointer(&b[0])
+	memclrNoHeapPointers(p, uintptr(len(b)))
+}

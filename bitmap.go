@@ -20,12 +20,10 @@ import (
 	"fmt"
 	"math"
 	"strings"
-
-	"github.com/dgraph-io/ristretto/z"
 )
 
 var (
-	empty          = make([]byte, 32<<20)
+	empty          = make([]uint16, 16<<20)
 	minSize        = uint16(32)
 	indexTotalSize = 0
 	indexNumKeys   = 1
@@ -38,7 +36,7 @@ const mask = uint64(0xFFFFFFFFFFFF0000)
 // First 8 bytes should contain the length of the array.
 type Bitmap struct {
 	// TODO: Make data []uint16 by default instead of byte slice.
-	data []byte
+	data []uint16
 	keys node
 }
 
@@ -46,10 +44,11 @@ func FromBuffer(data []byte) *Bitmap {
 	if len(data) < 8 {
 		return nil
 	}
-	x := toUint64Slice(data[:8])[0]
+	du := toUint16Slice(data)
+	x := toUint64Slice(du[:4])[0]
 	return &Bitmap{
-		data: data,
-		keys: toUint64Slice(data[:x]),
+		data: du,
+		keys: toUint64Slice(du[:x]),
 	}
 }
 
@@ -61,17 +60,19 @@ func NewBitmapWith(numKeys int) *Bitmap {
 		panic("Must contain at least two keys.")
 	}
 	ra := &Bitmap{
-		// Each key must also keep an offset. So, we need to double the number of uint64s allocated.
-		// Plus, we need to make space for the first 2 uint64s to store the number of keys.
-		data: make([]byte, sizeInBytesU64(2*numKeys+4)),
+		// Each key must also keep an offset. So, we need to double the number
+		// of uint64s allocated.  Plus, we need to make space for the first 2
+		// uint64s to store the number of keys.
+		data: make([]uint16, sizeInBytesU64(2*numKeys+4)/2),
 	}
 	ra.keys = toUint64Slice(ra.data)
 	ra.keys.setAt(indexTotalSize, uint64(len(ra.data)))
 
-	// Always generate a container for key = 0x00. Otherwise, node gets confused about whether a
-	// zero key is a new key or not.
+	// Always generate a container for key = 0x00. Otherwise, node gets confused
+	// about whether a zero key is a new key or not.
 	offset := ra.newContainer(minSizeOfContainer)
-	ra.keys.setAt(indexStart+1, offset) // First two are for num keys. index=2 -> 0 key. index=3 -> offset.
+	// First two are for num keys. index=2 -> 0 key. index=3 -> offset.
+	ra.keys.setAt(indexStart+1, offset)
 	ra.keys.setNumKeys(1)
 
 	return ra
@@ -112,7 +113,7 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 }
 
 func (ra *Bitmap) fastExpand(bySize uint16) {
-	prev := len(ra.keys) * 8
+	prev := len(ra.keys) * 4 // Multiply by 4 to convert from u16 to u64.
 	ra.data = append(ra.data, empty[:bySize]...)
 
 	// We should re-reference ra.keys correctly, because the underlying array might have been
@@ -122,28 +123,28 @@ func (ra *Bitmap) fastExpand(bySize uint16) {
 
 func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 	left := ra.data[offset:]
-	prevHash := z.MemHash(left)
+	// prevHash := z.MemHash(left)
 
 	ra.fastExpand(bySize) // Expand the buffer.
 	right := ra.data[len(ra.data)-len(left):]
 	copy(right, left) // Move data right.
-	afterHash := z.MemHash(right)
+	// afterHash := z.MemHash(right)
 
-	z.Memclr(ra.data[offset : offset+uint64(bySize)]) // Zero out the space in the middle.
-	if afterHash != prevHash {
-		panic("We modified something")
-	}
+	Memclr(ra.data[offset : offset+uint64(bySize)]) // Zero out the space in the middle.
+	// if afterHash != prevHash {
+	// 	panic("We modified something")
+	// }
 }
 
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
 	ra.fastExpand(sz)
-	setSize(ra.data[offset:], sz)
+	ra.data[offset] = sz
 	return offset
 }
 
 func (ra *Bitmap) expandContainer(offset uint64) {
-	sz := getSize(ra.data[offset : offset+2])
+	sz := ra.data[offset]
 	if sz == 0 {
 		panic("Container size should NOT be zero")
 	}
@@ -162,15 +163,15 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 	} else {
 		// Convert to bitmap container.
 		src := array(ra.getContainer(offset))
-		buf := toByteSlice(src.toBitmapContainer())
+		buf := src.toBitmapContainer()
 		assert(copy(ra.data[offset:], buf) == maxSizeOfContainer)
 	}
 }
 
 func (ra Bitmap) getContainer(offset uint64) []uint16 {
 	data := ra.data[offset:]
-	sz := getSize(data)
-	return toUint16Slice(data[:sz])
+	sz := data[0]
+	return data[:sz]
 }
 
 func (ra *Bitmap) Set(x uint64) bool {
@@ -481,11 +482,10 @@ func (ra *Bitmap) And(bm *Bitmap) {
 
 			// do the intersection
 			c := containerAnd(ac, bc)
-			outc := toByteSlice(c)
 
 			// create a new container and update the key offset to this container.
-			offset := a.newContainer(uint16(len(outc)))
-			copy(a.data[offset:], outc)
+			offset := a.newContainer(uint16(len(c)))
+			copy(a.data[offset:], c)
 			a.setKey(ak, offset)
 			ai++
 			bi++
@@ -523,9 +523,8 @@ func And(a, b *Bitmap) *Bitmap {
 
 			outc := containerAnd(ac, bc)
 			if getCardinality(outc) > 0 {
-				outb := toByteSlice(outc)
-				offset := res.newContainer(uint16(len(outb)))
-				copy(res.data[offset:], outb)
+				offset := res.newContainer(uint16(len(outc)))
+				copy(res.data[offset:], outc)
 				res.setKey(ak, offset)
 			}
 			ai++
@@ -556,11 +555,10 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 
 			// do the intersection
 			c := containerAndNot(ac, bc)
-			outc := toByteSlice(c)
 
 			// create a new container and update the key offset to this container.
-			offset := a.newContainer(uint16(len(outc)))
-			copy(a.data[offset:], outc)
+			offset := a.newContainer(uint16(len(c)))
+			copy(a.data[offset:], c)
 			a.setKey(ak, offset)
 			ai++
 			bi++
@@ -574,9 +572,8 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 			off := b.keys.val(bi)
 			bc := b.getContainer(off)
 
-			outb := toByteSlice(bc)
-			offset := a.newContainer(uint16(len(outb)))
-			copy(a.data[offset:], outb)
+			offset := a.newContainer(uint16(len(bc)))
+			copy(a.data[offset:], bc)
 			a.setKey(bk, offset)
 			bi++
 		}
@@ -588,9 +585,8 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 		off := b.keys.val(bi)
 		bc := b.getContainer(off)
 
-		outb := toByteSlice(bc)
-		offset := a.newContainer(uint16(len(outb)))
-		copy(a.data[offset:], outb)
+		offset := a.newContainer(uint16(len(bc)))
+		copy(a.data[offset:], bc)
 		a.setKey(bk, offset)
 		bi++
 	}
@@ -638,9 +634,8 @@ func Or(a, b *Bitmap) *Bitmap {
 		if ak == bk {
 			// Do the union.
 			outc := containerOr(ac, bc)
-			outb := toByteSlice(outc)
-			offset := res.newContainer(uint16(len(outb)))
-			copy(res.data[offset:], outb)
+			offset := res.newContainer(uint16(len(outc)))
+			copy(res.data[offset:], outc)
 			res.setKey(ak, offset)
 			ai++
 			bi++

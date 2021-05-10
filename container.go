@@ -7,15 +7,17 @@ import (
 	"strings"
 )
 
-// container uses extra 8 bytes in the front as header.
-// First 2 bytes are used for storing size of the container.
+// container uses extra 4 []uint16 in the front as header.
+// container[0] is used for storing the size of the container, expressed in Uint16.
 // The container size cannot exceed the vicinity of 8KB. At 8KB, we switch from packed arrays to
-// bitmaps. We can fit the entire uint16 worth of bitmaps in 8KB (2^16 / 8 = 8 KB).
+// bitmaps. We can fit the entire uint16 worth of bitmaps in 8KB (2^16 / 8 = 8
+// KB).
 
 const (
 	typeArray  uint16 = 0x00
 	typeBitmap uint16 = 0x01
 
+	// Container header.
 	indexSize        int = 0
 	indexType        int = 1
 	indexCardinality int = 2
@@ -23,24 +25,16 @@ const (
 	// 2^16 will not fit in uint16.
 	// indexUnused      int = 3
 
-	minSizeOfContainer = 8 + 2     // 8B for header and 2 B for allowing one uint16 to be added.
-	maxSizeOfContainer = 8 + 8<<10 // 8B for header and 8KB for storing bitmap container.
+	minSizeOfContainer = (8 + 2) / 2     // 8B for header and 2B for allowing one uint16 to be added. In Uint16.
+	maxSizeOfContainer = (8 + 8<<10) / 2 // 8B for header and 8KB for storing bitmap container. In Uint16.
 	startIdx           = uint16(4)
 )
 
 // getSize returns the size of container in bytes. The way to calculate the uint16 data
 // size is (byte size/2) - 4.
-func getSize(data []byte) uint16 {
-	x := toUint16Slice(data[:2])
-	return x[0]
-}
-func setSize(data []byte, sz uint16) {
-	x := toUint16Slice(data[:2])
-	x[0] = sz
-}
-func dataAt(data []uint16, i int) uint16 {
-	return data[int(startIdx)+i]
-}
+func getSize(data []uint16) uint16       { return data[0] }
+func setSize(data []uint16, sz uint16)   { data[0] = sz }
+func dataAt(data []uint16, i int) uint16 { return data[int(startIdx)+i] }
 
 func getCardinality(data []uint16) int {
 	return int(data[indexCardinality]) + int(data[indexCardinality+1])

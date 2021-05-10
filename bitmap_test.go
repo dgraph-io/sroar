@@ -16,7 +16,7 @@ func fill(c []uint16, b uint16) {
 }
 
 func TestModify(t *testing.T) {
-	data := make([]byte, 32)
+	data := make([]uint16, 16)
 	s := toUint64Slice(data)
 	for i := 0; i < len(s); i++ {
 		s[i] = uint64(i)
@@ -31,9 +31,9 @@ func TestModify(t *testing.T) {
 func TestContainer(t *testing.T) {
 	ra := NewBitmap()
 
-	offset := ra.newContainer(128)
+	offset := ra.newContainer(64)
 	c := ra.getContainer(offset)
-	require.Equal(t, uint16(128), getSize(ra.data[offset:]))
+	require.Equal(t, uint16(64), getSize(ra.data[offset:]))
 	require.Equal(t, uint16(0), c[indexCardinality])
 
 	fill(c, 0xFF)
@@ -195,10 +195,10 @@ func TestBulkAdd(t *testing.T) {
 	// t.Logf("Data size: %d\n", len(ra.data))
 
 	t.Logf("Copying data. Size: %d\n", len(ra.data))
-	dup := make([]byte, len(ra.data))
+	dup := make([]uint16, len(ra.data))
 	copy(dup, ra.data)
 
-	ra2 := FromBuffer(dup)
+	ra2 := FromBuffer(toByteSlice(dup))
 	require.Equal(t, len(m), ra2.GetCardinality())
 	for x := range m {
 		require.True(t, ra2.Has(x))
