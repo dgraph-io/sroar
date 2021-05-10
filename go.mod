@@ -1,6 +1,6 @@
 module sroar
 
-go 1.14
+go 1.16
 
 require (
 	github.com/dgraph-io/ristretto v0.0.4-0.20210409083012-59dd4684ae74
