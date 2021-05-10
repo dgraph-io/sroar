@@ -20,12 +20,10 @@ import (
 	"fmt"
 	"math"
 	"strings"
-
-	"github.com/dgraph-io/ristretto/z"
 )
 
 var (
-	empty          = make([]byte, 32<<20)
+	empty          = make([]uint16, 16<<20)
 	minSize        = uint16(32)
 	indexTotalSize = 0
 	indexNumKeys   = 1
@@ -35,10 +33,9 @@ var (
 
 const mask = uint64(0xFFFFFFFFFFFF0000)
 
-// First 8 bytes should contain the length of the array.
+// First uint64 contains the length of the node.
 type Bitmap struct {
-	// TODO: Make data []uint16 by default instead of byte slice.
-	data []byte
+	data []uint16
 	keys node
 }
 
@@ -46,10 +43,11 @@ func FromBuffer(data []byte) *Bitmap {
 	if len(data) < 8 {
 		return nil
 	}
-	x := toUint64Slice(data[:8])[0]
+	du := toUint16Slice(data)
+	x := toUint64Slice(du[:4])[0]
 	return &Bitmap{
-		data: data,
-		keys: toUint64Slice(data[:x]),
+		data: du,
+		keys: toUint64Slice(du[:x]),
 	}
 }
 
@@ -61,17 +59,19 @@ func NewBitmapWith(numKeys int) *Bitmap {
 		panic("Must contain at least two keys.")
 	}
 	ra := &Bitmap{
-		// Each key must also keep an offset. So, we need to double the number of uint64s allocated.
-		// Plus, we need to make space for the first 2 uint64s to store the number of keys.
-		data: make([]byte, sizeInBytesU64(2*numKeys+4)),
+		// Each key must also keep an offset. So, we need to double the number
+		// of uint64s allocated. Plus, we need to make space for the first 2
+		// uint64s to store the number of keys.
+		data: make([]uint16, 4*(2*numKeys+4)),
 	}
 	ra.keys = toUint64Slice(ra.data)
 	ra.keys.setAt(indexTotalSize, uint64(len(ra.data)))
 
-	// Always generate a container for key = 0x00. Otherwise, node gets confused about whether a
-	// zero key is a new key or not.
+	// Always generate a container for key = 0x00. Otherwise, node gets confused
+	// about whether a zero key is a new key or not.
 	offset := ra.newContainer(minSizeOfContainer)
-	ra.keys.setAt(indexStart+1, offset) // First two are for num keys. index=2 -> 0 key. index=3 -> offset.
+	// First two are for num keys. index=2 -> 0 key. index=3 -> offset.
+	ra.keys.setAt(indexStart+1, offset)
 	ra.keys.setNumKeys(1)
 
 	return ra
@@ -89,7 +89,7 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	}
 
 	// ra.keys is full. We should expand its size.
-	curSize := uint64(len(ra.keys) * 8)
+	curSize := uint64(len(ra.keys) * 4) // Multiply by 4 for U64 -> U16.
 	bySize := curSize
 	if bySize > math.MaxUint16 {
 		bySize = math.MaxInt16
@@ -112,7 +112,7 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 }
 
 func (ra *Bitmap) fastExpand(bySize uint16) {
-	prev := len(ra.keys) * 8
+	prev := len(ra.keys) * 4 // Multiply by 4 to convert from u16 to u64.
 	ra.data = append(ra.data, empty[:bySize]...)
 
 	// We should re-reference ra.keys correctly, because the underlying array might have been
@@ -122,33 +122,40 @@ func (ra *Bitmap) fastExpand(bySize uint16) {
 
 func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 	left := ra.data[offset:]
-	prevHash := z.MemHash(left)
+	// prevHash := z.MemHash(left)
 
 	ra.fastExpand(bySize) // Expand the buffer.
 	right := ra.data[len(ra.data)-len(left):]
 	copy(right, left) // Move data right.
-	afterHash := z.MemHash(right)
+	// afterHash := z.MemHash(right)
 
-	z.Memclr(ra.data[offset : offset+uint64(bySize)]) // Zero out the space in the middle.
-	if afterHash != prevHash {
-		panic("We modified something")
-	}
+	Memclr(ra.data[offset : offset+uint64(bySize)]) // Zero out the space in the middle.
+	// if afterHash != prevHash {
+	// 	panic("We modified something")
+	// }
 }
 
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
 	ra.fastExpand(sz)
-	setSize(ra.data[offset:], sz)
+	ra.data[offset] = sz
 	return offset
 }
 
+// expandContainer would expand a container at the given offset. It would typically double the size
+// of the container, until it reaches a threshold, where the size of the container would reach 2^16.
+// Expressed in uint16s, that'd be (2^16)/(2^4) = 2^12 = 4096. So, if the container size >= 2048,
+// then doubling that would put it above 4096. That's why in the code below, you see the checks for
+// size 2048.
 func (ra *Bitmap) expandContainer(offset uint64) {
-	sz := getSize(ra.data[offset : offset+2])
+	sz := ra.data[offset]
 	if sz == 0 {
 		panic("Container size should NOT be zero")
 	}
 	bySize := uint16(sz)
-	if sz >= 4096 {
+	if sz >= 2048 {
+		// Size is in uint16. Half of max allowed size. If we're expanding the container by more
+		// than 2048, we should just cap it to max size of 4096.
 		bySize = maxSizeOfContainer - sz
 	}
 
@@ -156,21 +163,24 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 	ra.scootRight(offset+uint64(sz), bySize)
 	ra.keys.updateOffsets(offset, uint64(bySize))
 
-	if sz < 4096 {
+	if sz < 2048 {
 		setSize(ra.data[offset:], sz+bySize)
 
 	} else {
 		// Convert to bitmap container.
 		src := array(ra.getContainer(offset))
-		buf := toByteSlice(src.toBitmapContainer())
+		buf := src.toBitmapContainer()
 		assert(copy(ra.data[offset:], buf) == maxSizeOfContainer)
 	}
 }
 
 func (ra Bitmap) getContainer(offset uint64) []uint16 {
 	data := ra.data[offset:]
-	sz := getSize(data)
-	return toUint16Slice(data[:sz])
+	if len(data) == 0 {
+		panic(fmt.Sprintf("No container found at offset: %d\n", offset))
+	}
+	sz := data[0]
+	return data[:sz]
 }
 
 func (ra *Bitmap) Set(x uint64) bool {
@@ -481,11 +491,10 @@ func (ra *Bitmap) And(bm *Bitmap) {
 
 			// do the intersection
 			c := containerAnd(ac, bc)
-			outc := toByteSlice(c)
 
 			// create a new container and update the key offset to this container.
-			offset := a.newContainer(uint16(len(outc)))
-			copy(a.data[offset:], outc)
+			offset := a.newContainer(uint16(len(c)))
+			copy(a.data[offset:], c)
 			a.setKey(ak, offset)
 			ai++
 			bi++
@@ -523,9 +532,8 @@ func And(a, b *Bitmap) *Bitmap {
 
 			outc := containerAnd(ac, bc)
 			if getCardinality(outc) > 0 {
-				outb := toByteSlice(outc)
-				offset := res.newContainer(uint16(len(outb)))
-				copy(res.data[offset:], outb)
+				offset := res.newContainer(uint16(len(outc)))
+				copy(res.data[offset:], outc)
 				res.setKey(ak, offset)
 			}
 			ai++
@@ -556,11 +564,10 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 
 			// do the intersection
 			c := containerAndNot(ac, bc)
-			outc := toByteSlice(c)
 
 			// create a new container and update the key offset to this container.
-			offset := a.newContainer(uint16(len(outc)))
-			copy(a.data[offset:], outc)
+			offset := a.newContainer(uint16(len(c)))
+			copy(a.data[offset:], c)
 			a.setKey(ak, offset)
 			ai++
 			bi++
@@ -574,9 +581,8 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 			off := b.keys.val(bi)
 			bc := b.getContainer(off)
 
-			outb := toByteSlice(bc)
-			offset := a.newContainer(uint16(len(outb)))
-			copy(a.data[offset:], outb)
+			offset := a.newContainer(uint16(len(bc)))
+			copy(a.data[offset:], bc)
 			a.setKey(bk, offset)
 			bi++
 		}
@@ -588,9 +594,8 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 		off := b.keys.val(bi)
 		bc := b.getContainer(off)
 
-		outb := toByteSlice(bc)
-		offset := a.newContainer(uint16(len(outb)))
-		copy(a.data[offset:], outb)
+		offset := a.newContainer(uint16(len(bc)))
+		copy(a.data[offset:], bc)
 		a.setKey(bk, offset)
 		bi++
 	}
@@ -638,19 +643,18 @@ func Or(a, b *Bitmap) *Bitmap {
 		if ak == bk {
 			// Do the union.
 			outc := containerOr(ac, bc)
-			outb := toByteSlice(outc)
-			offset := res.newContainer(uint16(len(outb)))
-			copy(res.data[offset:], outb)
+			offset := res.newContainer(uint16(len(outc)))
+			copy(res.data[offset:], outc)
 			res.setKey(ak, offset)
 			ai++
 			bi++
 		} else if ak < bk {
-			off := res.newContainer(uint16(sizeInBytesU16(len(ac))))
+			off := res.newContainer(uint16(len(ac)))
 			copy(res.getContainer(off), ac)
 			res.setKey(ak, off)
 			ai++
 		} else {
-			off := res.newContainer(uint16(sizeInBytesU16(len(bc))))
+			off := res.newContainer(uint16(len(bc)))
 			copy(res.getContainer(off), bc)
 			res.setKey(bk, off)
 			bi++
@@ -659,7 +663,7 @@ func Or(a, b *Bitmap) *Bitmap {
 	for ai < an {
 		ak := a.keys.key(ai)
 		ac := a.getContainer(a.keys.val(ai))
-		off := res.newContainer(uint16(sizeInBytesU16(len(ac))))
+		off := res.newContainer(uint16(len(ac)))
 
 		copy(res.getContainer(off), ac)
 		res.setKey(ak, off)
@@ -668,7 +672,7 @@ func Or(a, b *Bitmap) *Bitmap {
 	for bi < bn {
 		bk := b.keys.key(bi)
 		bc := b.getContainer(b.keys.val(bi))
-		off := res.newContainer(uint16(sizeInBytesU16(len(bc))))
+		off := res.newContainer(uint16(len(bc)))
 
 		copy(res.getContainer(off), bc)
 		res.setKey(bk, off)

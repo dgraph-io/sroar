@@ -16,7 +16,7 @@ func fill(c []uint16, b uint16) {
 }
 
 func TestModify(t *testing.T) {
-	data := make([]byte, 32)
+	data := make([]uint16, 16)
 	s := toUint64Slice(data)
 	for i := 0; i < len(s); i++ {
 		s[i] = uint64(i)
@@ -31,9 +31,11 @@ func TestModify(t *testing.T) {
 func TestContainer(t *testing.T) {
 	ra := NewBitmap()
 
-	offset := ra.newContainer(128)
+	// We're creating a container of size 64 words. 4 of these would be used for
+	// the header. So, the data can only live in 60 words.
+	offset := ra.newContainer(64)
 	c := ra.getContainer(offset)
-	require.Equal(t, uint16(128), getSize(ra.data[offset:]))
+	require.Equal(t, uint16(64), ra.data[offset])
 	require.Equal(t, uint16(0), c[indexCardinality])
 
 	fill(c, 0xFF)
@@ -45,18 +47,18 @@ func TestContainer(t *testing.T) {
 		}
 	}
 
-	offset2 := ra.newContainer(64) // Add a second container.
+	offset2 := ra.newContainer(32) // Add a second container.
 	c2 := ra.getContainer(offset2)
-	require.Equal(t, uint16(64), getSize(ra.data[offset2:]))
+	require.Equal(t, uint16(32), ra.data[offset2])
 	fill(c2, 0xEE)
 
 	// Expand the first container. This would push out the second container, so update its offset.
 	ra.expandContainer(offset)
-	offset2 += 128
+	offset2 += 64
 
 	// Check if the second container is correct.
 	c2 = ra.getContainer(offset2)
-	require.Equal(t, uint16(64), getSize(ra.data[offset2:]))
+	require.Equal(t, uint16(32), ra.data[offset2])
 	require.Equal(t, 32, len(c2))
 	for _, val := range c2[startIdx:] {
 		require.Equal(t, uint16(0xEE), val)
@@ -64,7 +66,7 @@ func TestContainer(t *testing.T) {
 
 	// Check if the first container is correct.
 	c = ra.getContainer(offset)
-	require.Equal(t, uint16(256), getSize(ra.data[offset:]))
+	require.Equal(t, uint16(128), ra.data[offset])
 	require.Equal(t, 128, len(c))
 	for i, u := range c[startIdx:] {
 		if i < 60 {
@@ -88,6 +90,7 @@ func TestKey(t *testing.T) {
 
 	// Create 10 containers
 	for i := 0; i < 10; i++ {
+		t.Logf("Creating a new container: %d\n", i)
 		ra.Set(uint64(i)<<16 + 1)
 	}
 
@@ -195,10 +198,10 @@ func TestBulkAdd(t *testing.T) {
 	// t.Logf("Data size: %d\n", len(ra.data))
 
 	t.Logf("Copying data. Size: %d\n", len(ra.data))
-	dup := make([]byte, len(ra.data))
+	dup := make([]uint16, len(ra.data))
 	copy(dup, ra.data)
 
-	ra2 := FromBuffer(dup)
+	ra2 := FromBuffer(toByteSlice(dup))
 	require.Equal(t, len(m), ra2.GetCardinality())
 	for x := range m {
 		require.True(t, ra2.Has(x))
@@ -276,6 +279,7 @@ func TestBitmapOps(t *testing.T) {
 
 		bitOr := Or(small, big)
 		bitAnd := And(small, big)
+
 		t.Logf("Sizes. small: %d big: %d, bitOr: %d bitAnd: %d\n",
 			small.GetCardinality(), big.GetCardinality(),
 			bitOr.GetCardinality(), bitAnd.GetCardinality())
