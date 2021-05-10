@@ -29,12 +29,10 @@ const (
 	// Bitmap container can contain 2^16 integers. Each integer would use one bit to represent.
 	// Given that our data is represented in []uint16s, that'd mean the size of container to store
 	// it would be divided by 16.
-	maxSizeOfContainer = 4 + (1<<16)/16 // 4 for header and 4096 for storing bitmap container. In Uint16.
+	// 4 for header and 4096 for storing bitmap container. In Uint16.
+	maxSizeOfContainer = 4 + (1<<16)/16
 )
 
-// getSize returns the size of container in bytes. The way to calculate the uint16 data
-// size is (byte size/2) - 4.
-func getSize(data []uint16) uint16       { return data[0] }
 func setSize(data []uint16, sz uint16)   { data[0] = sz }
 func dataAt(data []uint16, i int) uint16 { return data[int(startIdx)+i] }
 

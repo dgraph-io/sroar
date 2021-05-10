@@ -31,11 +31,11 @@ func TestModify(t *testing.T) {
 func TestContainer(t *testing.T) {
 	ra := NewBitmap()
 
-	// We're creating a container of size 64 words. 4 of these would be used for the header. So, the data
-	// can only live in 60 words.
+	// We're creating a container of size 64 words. 4 of these would be used for
+	// the header. So, the data can only live in 60 words.
 	offset := ra.newContainer(64)
 	c := ra.getContainer(offset)
-	require.Equal(t, uint16(64), getSize(ra.data[offset:]))
+	require.Equal(t, uint16(64), ra.data[offset])
 	require.Equal(t, uint16(0), c[indexCardinality])
 
 	fill(c, 0xFF)
@@ -49,7 +49,7 @@ func TestContainer(t *testing.T) {
 
 	offset2 := ra.newContainer(32) // Add a second container.
 	c2 := ra.getContainer(offset2)
-	require.Equal(t, uint16(32), getSize(ra.data[offset2:]))
+	require.Equal(t, uint16(32), ra.data[offset2])
 	fill(c2, 0xEE)
 
 	// Expand the first container. This would push out the second container, so update its offset.
@@ -58,7 +58,7 @@ func TestContainer(t *testing.T) {
 
 	// Check if the second container is correct.
 	c2 = ra.getContainer(offset2)
-	require.Equal(t, uint16(32), getSize(ra.data[offset2:]))
+	require.Equal(t, uint16(32), ra.data[offset2])
 	require.Equal(t, 32, len(c2))
 	for _, val := range c2[startIdx:] {
 		require.Equal(t, uint16(0xEE), val)
@@ -66,7 +66,7 @@ func TestContainer(t *testing.T) {
 
 	// Check if the first container is correct.
 	c = ra.getContainer(offset)
-	require.Equal(t, uint16(128), getSize(ra.data[offset:]))
+	require.Equal(t, uint16(128), ra.data[offset])
 	require.Equal(t, 128, len(c))
 	for i, u := range c[startIdx:] {
 		if i < 60 {

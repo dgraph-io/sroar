@@ -33,9 +33,8 @@ var (
 
 const mask = uint64(0xFFFFFFFFFFFF0000)
 
-// First 8 bytes should contain the length of the array.
+// First uint64 contains the length of the node.
 type Bitmap struct {
-	// TODO: Make data []uint16 by default instead of byte slice.
 	data []uint16
 	keys node
 }
@@ -61,7 +60,7 @@ func NewBitmapWith(numKeys int) *Bitmap {
 	}
 	ra := &Bitmap{
 		// Each key must also keep an offset. So, we need to double the number
-		// of uint64s allocated.  Plus, we need to make space for the first 2
+		// of uint64s allocated. Plus, we need to make space for the first 2
 		// uint64s to store the number of keys.
 		data: make([]uint16, 4*(2*numKeys+4)),
 	}
