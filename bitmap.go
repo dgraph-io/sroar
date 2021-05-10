@@ -342,6 +342,8 @@ func (ra *Bitmap) Debug(x uint64) string {
 	c := ra.getContainer(off)
 	lo := uint16(x)
 
+	b.WriteString(fmt.Sprintf("x: %#x lo: %#x. offset: %d\n", x, lo, off))
+
 	switch c[indexType] {
 	case typeArray:
 	case typeBitmap:

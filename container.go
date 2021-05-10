@@ -97,7 +97,6 @@ func (c array) add(x uint16) bool {
 	N := getCardinality(c)
 	offset := int(startIdx) + idx
 
-	// fmt.Println(x, idx, N, offset)
 	if int(idx) < N {
 		if c[offset] == x {
 			return false
@@ -115,7 +114,6 @@ func (c array) remove(x uint16) bool {
 	N := getCardinality(c)
 	offset := int(startIdx) + idx
 
-	// fmt.Println(x, idx, N, offset)
 	if int(idx) < N {
 		if c[offset] != x {
 			return false
