@@ -271,8 +271,8 @@ func TestBitmapOps(t *testing.T) {
 			occ[smallx] |= 0x01 // binary 0001
 			occ[bigx] |= 0x02   // binary 0010
 		}
-		// require.Equal(t, len(smallMap), small.GetCardinality())
-		// require.Equal(t, len(bigMap), big.GetCardinality())
+		require.Equal(t, len(smallMap), small.GetCardinality())
+		require.Equal(t, len(bigMap), big.GetCardinality())
 
 		bitOr := Or(small, big)
 		bitAnd := And(small, big)
@@ -345,4 +345,132 @@ func TestUint16(t *testing.T) {
 			// require.Failf(t, "x<=prev", "x %d <= prev %d", x, prev)
 		}
 	}
+}
+
+func TestSetGet(t *testing.T) {
+	bm := NewBitmap()
+	N := int(1e6)
+	for i := 0; i < N; i++ {
+		bm.Set(uint64(i))
+	}
+	for i := 0; i < N; i++ {
+		has := bm.Has(uint64(i))
+		require.True(t, has)
+	}
+}
+
+func TestAnd(t *testing.T) {
+	a := NewBitmap()
+	b := NewBitmap()
+
+	N := int(1e7)
+	for i := 0; i < N; i++ {
+		if i%2 == 0 {
+			a.Set(uint64(i))
+		} else {
+			b.Set(uint64(i))
+		}
+	}
+	require.Equal(t, N/2, a.GetCardinality())
+	require.Equal(t, N/2, b.GetCardinality())
+	res := And(a, b)
+	require.Equal(t, 0, res.GetCardinality())
+	a.And(b)
+	require.Equal(t, 0, a.GetCardinality())
+}
+
+func TestAndNot(t *testing.T) {
+	a := NewBitmap()
+	b := NewBitmap()
+
+	N := int(1e7)
+	for i := 0; i < N; i++ {
+		if i < N/2 {
+			a.Set(uint64(i))
+		} else {
+			b.Set(uint64(i))
+		}
+	}
+	require.Equal(t, N/2, a.GetCardinality())
+	require.Equal(t, N/2, b.GetCardinality())
+
+	a.AndNot(b)
+	require.Equal(t, N, a.GetCardinality())
+	a.AndNot(b)
+	require.Equal(t, N/2, a.GetCardinality())
+}
+
+func TestOr(t *testing.T) {
+	a := NewBitmap()
+	b := NewBitmap()
+
+	N := int(1e7)
+	for i := 0; i < N; i++ {
+		if i%2 == 0 {
+			a.Set(uint64(i))
+		} else {
+			b.Set(uint64(i))
+		}
+	}
+	require.Equal(t, N/2, a.GetCardinality())
+	require.Equal(t, N/2, b.GetCardinality())
+	res := Or(a, b)
+	require.Equal(t, N, res.GetCardinality())
+	a.Or(b)
+	require.Equal(t, N, a.GetCardinality())
+
+}
+
+func TestCardinality(t *testing.T) {
+	a := NewBitmap()
+	n := 1 << 20
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i))
+	}
+	require.Equal(t, n, a.GetCardinality())
+}
+
+func TestRemove(t *testing.T) {
+	a := NewBitmap()
+	N := int(1e7)
+	for i := 0; i < N; i++ {
+		a.Set(uint64(i))
+	}
+	require.Equal(t, N, a.GetCardinality())
+	for i := 0; i < N/2; i++ {
+		require.True(t, a.Remove(uint64(i)))
+	}
+	require.Equal(t, N/2, a.GetCardinality())
+
+	// Remove elelemts which doesn't exist should be no-op
+	for i := 0; i < N/2; i++ {
+		require.False(t, a.Remove(uint64(i)))
+	}
+	require.Equal(t, N/2, a.GetCardinality())
+
+	for i := 0; i < N/2; i++ {
+		require.True(t, a.Remove(uint64(i+N/2)))
+	}
+	require.Equal(t, 0, a.GetCardinality())
+}
+
+func TestRemoveRange(t *testing.T) {
+	a := NewBitmap()
+	N := int(1e7)
+	for i := 0; i < N; i++ {
+		a.Set(uint64(i))
+	}
+	require.Equal(t, N, a.GetCardinality())
+	a.RemoveRange(uint64(N/4), uint64(N/2))
+	require.Equal(t, 3*N/4-1, a.GetCardinality())
+
+	a.RemoveRange(0, uint64(N/2))
+	require.Equal(t, N/2-1, a.GetCardinality())
+
+	a.RemoveRange(uint64(N/2), uint64(N))
+	require.Equal(t, 0, a.GetCardinality())
+	a.Set(uint64(N / 4))
+	a.Set(uint64(N / 2))
+	a.Set(uint64(3 * N / 4))
+	require.Equal(t, 3, a.GetCardinality())
 }
