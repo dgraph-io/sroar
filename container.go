@@ -337,7 +337,12 @@ func (b bitmap) andBitmap(other bitmap) []uint16 {
 }
 
 func (b bitmap) orBitmap(other bitmap, buf []uint16) []uint16 {
-	copy(buf, b) // Copy over first.
+	isInline := len(buf) == 0
+	if isInline {
+		buf = b
+	} else {
+		copy(buf, b) // Copy over first.
+	}
 	buf[indexSize] = maxSizeOfContainer
 	buf[indexType] = typeBitmap
 
@@ -348,6 +353,9 @@ func (b bitmap) orBitmap(other bitmap, buf []uint16) []uint16 {
 		num += bits.OnesCount16(data[i])
 	}
 	setCardinality(buf, num)
+	if isInline {
+		return nil
+	}
 	return buf
 }
 
@@ -367,7 +375,12 @@ func (b bitmap) andNotBitmap(other bitmap, buf []uint16) []uint16 {
 }
 
 func (b bitmap) orArray(other array, buf []uint16) []uint16 {
-	copy(buf, b)
+	isInline := len(buf) == 0
+	if isInline {
+		buf = b
+	} else {
+		copy(buf, b)
+	}
 
 	num := getCardinality(buf)
 	for _, x := range other.all() {
@@ -381,6 +394,9 @@ func (b bitmap) orArray(other array, buf []uint16) []uint16 {
 		num += after - before
 	}
 	setCardinality(buf, num)
+	if isInline {
+		return nil
+	}
 	return buf
 }
 

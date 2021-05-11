@@ -211,6 +211,25 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 	}
 }
 
+// copyAt is slower than just creating new containers. We should
+// investigate why. Most likely scoot is being called many many times over.
+func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
+	sz := ra.data[offset]
+	if sz == 0 {
+		panic("Container size should NOT be zero")
+	}
+	if uint16(len(src)) > sz {
+		bySize := uint16(len(src)) - sz
+		// Select the portion to the right of the container, beyond its right boundary.
+		ra.scootRight(offset+uint64(sz), bySize)
+		ra.keys.updateOffsets(offset, uint64(bySize))
+	}
+	// fmt.Printf("copyAt offset: %d src: %d sz: %d\n",
+	// 	offset, len(src), sz)
+
+	assert(copy(ra.data[offset:], src) == len(src))
+}
+
 func (ra Bitmap) getContainer(offset uint64) []uint16 {
 	data := ra.data[offset:]
 	if len(data) == 0 {
@@ -484,7 +503,7 @@ func containerAndNot(ac, bc, buf []uint16) []uint16 {
 	panic("containerAndNot: We should not reach here")
 }
 
-func containerOr(ac, bc, buf []uint16) []uint16 {
+func containerOr(ac, bc, buf []uint16, inline bool) []uint16 {
 	at := ac[indexType]
 	bt := bc[indexType]
 
@@ -492,6 +511,10 @@ func containerOr(ac, bc, buf []uint16) []uint16 {
 		left := array(ac)
 		right := array(bc)
 		return left.orArray(right, buf)
+	}
+
+	if inline {
+		buf = nil
 	}
 	if at == typeArray && bt == typeBitmap {
 		left := array(ac)
@@ -658,11 +681,19 @@ func (ra *Bitmap) Or(bm *Bitmap) {
 		} else {
 			// bk is also present in a, do a container or.
 			//TODO: Need to cleanup the old container in a.
-			ac := a.getContainer(a.keys.val(idx))
-			c := containerOr(ac, bc, buf)
-			offset := a.newContainer(uint16(len(toByteSlice(c))))
-			copy(a.getContainer(offset), c)
-			a.setKey(bk, offset)
+			// For bitmap containers in a, we won't need to do any cleanup. But,
+			// for array ORs, we'd have to.
+			offset := a.keys.val(idx)
+			ac := a.getContainer(offset)
+			c := containerOr(ac, bc, buf, true)
+			if len(c) > 0 {
+				// a.copyAt(offset, c)
+				// a.setKey(bk, offset)
+				// TODO: We should calculate the "wastage" in the Bitmap.
+				offset := a.newContainer(uint16(len(toByteSlice(c))))
+				copy(a.getContainer(offset), c)
+				a.setKey(bk, offset)
+			}
 		}
 		bi++
 	}
@@ -683,7 +714,7 @@ func Or(a, b *Bitmap) *Bitmap {
 
 		if ak == bk {
 			// Do the union.
-			outc := containerOr(ac, bc, buf)
+			outc := containerOr(ac, bc, buf, false)
 			offset := res.newContainer(uint16(len(outc)))
 			copy(res.data[offset:], outc)
 			res.setKey(ak, offset)
