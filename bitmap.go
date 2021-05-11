@@ -35,8 +35,9 @@ const mask = uint64(0xFFFFFFFFFFFF0000)
 
 // First uint64 contains the length of the node.
 type Bitmap struct {
-	data []uint16
-	keys node
+	data    []uint16
+	scratch []uint16
+	keys    node
 }
 
 func FromBuffer(data []byte) *Bitmap {
@@ -46,8 +47,9 @@ func FromBuffer(data []byte) *Bitmap {
 	du := toUint16Slice(data)
 	x := toUint64Slice(du[:4])[0]
 	return &Bitmap{
-		data: du,
-		keys: toUint64Slice(du[:x]),
+		data:    du,
+		scratch: make([]uint16, maxSizeOfContainer),
+		keys:    toUint64Slice(du[:x]),
 	}
 }
 
@@ -75,6 +77,17 @@ func NewBitmapWith(numKeys int) *Bitmap {
 	ra.keys.setNumKeys(1)
 
 	return ra
+}
+
+func (b *Bitmap) Grow(n int) {
+	curSz := len(b.data)
+
+	out := make([]uint16, len(b.data)+n)
+	copy(out, b.data)
+	b.data = out[:curSz]
+
+	x := toUint64Slice(b.data[:4])[0]
+	b.keys = toUint64Slice(b.data[:x])
 }
 
 // setKey sets a key and container offset.
@@ -111,9 +124,33 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	return offset + bySize
 }
 
+var numFastExpandCalls, numReallocs uint32
+
 func (ra *Bitmap) fastExpand(bySize uint16) {
+	// calls := atomic.AddUint32(&numFastExpandCalls, 1)
+	// if calls%100000 == 0 {
+	// 	fmt.Printf("Num fastExpand calls: %d. ra.data: cap: %d len: %d bySize: %d\n",
+	// 		calls, cap(ra.data), len(ra.data), bySize)
+	// }
+
 	prev := len(ra.keys) * 4 // Multiply by 4 to convert from u16 to u64.
-	ra.data = append(ra.data, empty[:bySize]...)
+	// ra.data = append(ra.data, empty[:bySize]...)
+
+	toSize := len(ra.data) + int(bySize)
+	if toSize <= cap(ra.data) {
+		ra.data = ra.data[:toSize]
+	} else {
+		growBy := cap(ra.data)
+		if growBy < int(bySize) {
+			growBy = int(bySize)
+		}
+		out := make([]uint16, cap(ra.data)+growBy)
+		copy(out, ra.data)
+		ra.data = out[:toSize]
+		// ra.data = append(ra.data, empty[:bySize]...)
+		// num := atomic.AddUint32(&numReallocs, 1)
+		// fmt.Printf("Expanded ra.data to cap: %d. Num: %d. Calls: %d\n", cap(ra.data), num, calls)
+	}
 
 	// We should re-reference ra.keys correctly, because the underlying array might have been
 	// switched after append.
@@ -169,7 +206,7 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 	} else {
 		// Convert to bitmap container.
 		src := array(ra.getContainer(offset))
-		buf := src.toBitmapContainer()
+		buf := src.toBitmapContainer(ra.scratch)
 		assert(copy(ra.data[offset:], buf) == maxSizeOfContainer)
 	}
 }
@@ -419,57 +456,57 @@ func containerAnd(ac, bc []uint16) []uint16 {
 	panic("containerAnd: We should not reach here")
 }
 
-func containerAndNot(ac, bc []uint16) []uint16 {
+func containerAndNot(ac, bc, buf []uint16) []uint16 {
 	at := ac[indexType]
 	bt := bc[indexType]
 
 	if at == typeArray && bt == typeArray {
 		left := array(ac)
 		right := array(bc)
-		return left.andNotArray(right)
+		return left.andNotArray(right, buf)
 	}
 	if at == typeArray && bt == typeBitmap {
 		left := array(ac)
 		right := bitmap(bc)
-		return left.andNotBitmap(right)
+		return left.andNotBitmap(right, buf)
 	}
 	if at == typeBitmap && bt == typeArray {
 		left := bitmap(ac)
 		right := array(bc)
-		out := right.andNotBitmap(left)
+		out := right.andNotBitmap(left, buf)
 		return out
 	}
 	if at == typeBitmap && bt == typeBitmap {
 		left := bitmap(ac)
 		right := bitmap(bc)
-		return left.andNotBitmap(right)
+		return left.andNotBitmap(right, buf)
 	}
 	panic("containerAndNot: We should not reach here")
 }
 
-func containerOr(ac, bc []uint16) []uint16 {
+func containerOr(ac, bc, buf []uint16) []uint16 {
 	at := ac[indexType]
 	bt := bc[indexType]
 
 	if at == typeArray && bt == typeArray {
 		left := array(ac)
 		right := array(bc)
-		return left.orArray(right)
+		return left.orArray(right, buf)
 	}
 	if at == typeArray && bt == typeBitmap {
 		left := array(ac)
 		right := bitmap(bc)
-		return right.orArray(left)
+		return right.orArray(left, buf)
 	}
 	if at == typeBitmap && bt == typeArray {
 		left := bitmap(ac)
 		right := array(bc)
-		return left.orArray(right)
+		return left.orArray(right, buf)
 	}
 	if at == typeBitmap && bt == typeBitmap {
 		left := bitmap(ac)
 		right := bitmap(bc)
-		return left.orBitmap(right)
+		return left.orBitmap(right, buf)
 	}
 	panic("containerAnd: We should not reach here")
 }
@@ -552,6 +589,8 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 	ai, an := 0, a.keys.numKeys()
 	bi, bn := 0, b.keys.numKeys()
 
+	buf := make([]uint16, maxSizeOfContainer)
+
 	for ai < an && bi < bn {
 		ak := a.keys.key(ai)
 		bk := b.keys.key(bi)
@@ -563,7 +602,7 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 			bc := b.getContainer(off)
 
 			// do the intersection
-			c := containerAndNot(ac, bc)
+			c := containerAndNot(ac, bc, buf)
 
 			// create a new container and update the key offset to this container.
 			offset := a.newContainer(uint16(len(c)))
@@ -605,6 +644,7 @@ func (ra *Bitmap) Or(bm *Bitmap) {
 	bi, bn := 0, bm.keys.numKeys()
 	a, b := ra, bm
 
+	buf := make([]uint16, maxSizeOfContainer)
 	for bi < bn {
 		bk := b.keys.key(bi)
 		bc := b.getContainer(b.keys.val(bi))
@@ -619,7 +659,7 @@ func (ra *Bitmap) Or(bm *Bitmap) {
 			// bk is also present in a, do a container or.
 			//TODO: Need to cleanup the old container in a.
 			ac := a.getContainer(a.keys.val(idx))
-			c := containerOr(ac, bc)
+			c := containerOr(ac, bc, buf)
 			offset := a.newContainer(uint16(len(toByteSlice(c))))
 			copy(a.getContainer(offset), c)
 			a.setKey(bk, offset)
@@ -632,6 +672,7 @@ func Or(a, b *Bitmap) *Bitmap {
 	ai, an := 0, a.keys.numKeys()
 	bi, bn := 0, b.keys.numKeys()
 
+	buf := make([]uint16, maxSizeOfContainer)
 	res := NewBitmap()
 	for ai < an && bi < bn {
 		ak := a.keys.key(ai)
@@ -642,7 +683,7 @@ func Or(a, b *Bitmap) *Bitmap {
 
 		if ak == bk {
 			// Do the union.
-			outc := containerOr(ac, bc)
+			outc := containerOr(ac, bc, buf)
 			offset := res.newContainer(uint16(len(outc)))
 			copy(res.data[offset:], outc)
 			res.setKey(ak, offset)
@@ -693,9 +734,18 @@ func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 }
 
 func FastOr(bitmaps ...*Bitmap) *Bitmap {
+	var card int
+	for _, b := range bitmaps {
+		card += b.GetCardinality()
+	}
+	// fmt.Printf("Approximate card: %d\n", card)
+
 	b := NewBitmap()
+	b.Grow(card * 10)
+
 	for _, bm := range bitmaps {
 		b.Or(bm)
 	}
+	// fmt.Printf("Final card: %d. Size: %d\n", b.GetCardinality(), len(b.data))
 	return b
 }
