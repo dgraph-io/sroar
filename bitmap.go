@@ -512,14 +512,14 @@ func containerOr(ac, bc, buf []uint16, inline bool) []uint16 {
 		right := array(bc)
 		return left.orArray(right, buf)
 	}
-
-	if inline {
-		buf = nil
-	}
 	if at == typeArray && bt == typeBitmap {
 		left := array(ac)
 		right := bitmap(bc)
 		return right.orArray(left, buf)
+	}
+	if inline {
+		// These two following cases can be fully inlined.
+		buf = nil
 	}
 	if at == typeBitmap && bt == typeArray {
 		left := bitmap(ac)
@@ -769,7 +769,7 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	for _, b := range bitmaps {
 		card += b.GetCardinality()
 	}
-	// fmt.Printf("Approximate card: %d\n", card)
+	fmt.Printf("Approximate card: %d\n", card)
 
 	b := NewBitmap()
 	b.Grow(card * 10)
@@ -777,6 +777,6 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	for _, bm := range bitmaps {
 		b.Or(bm)
 	}
-	// fmt.Printf("Final card: %d. Size: %d\n", b.GetCardinality(), len(b.data))
+	fmt.Printf("Final card: %d. Size: %d\n", b.GetCardinality(), len(b.data))
 	return b
 }
