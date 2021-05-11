@@ -134,23 +134,25 @@ func (ra *Bitmap) fastExpand(bySize uint16) {
 	// }
 
 	prev := len(ra.keys) * 4 // Multiply by 4 to convert from u16 to u64.
-	// ra.data = append(ra.data, empty[:bySize]...)
+	ra.data = append(ra.data, empty[:bySize]...)
 
-	toSize := len(ra.data) + int(bySize)
-	if toSize <= cap(ra.data) {
-		ra.data = ra.data[:toSize]
-	} else {
-		growBy := cap(ra.data)
-		if growBy < int(bySize) {
-			growBy = int(bySize)
+	/*
+		toSize := len(ra.data) + int(bySize)
+		if toSize <= cap(ra.data) {
+			ra.data = ra.data[:toSize]
+		} else {
+			growBy := cap(ra.data)
+			if growBy < int(bySize) {
+				growBy = int(bySize)
+			}
+			out := make([]uint16, cap(ra.data)+growBy)
+			copy(out, ra.data)
+			ra.data = out[:toSize]
+			// ra.data = append(ra.data, empty[:bySize]...)
+			// num := atomic.AddUint32(&numReallocs, 1)
+			// fmt.Printf("Expanded ra.data to cap: %d. Num: %d. Calls: %d\n", cap(ra.data), num, calls)
 		}
-		out := make([]uint16, cap(ra.data)+growBy)
-		copy(out, ra.data)
-		ra.data = out[:toSize]
-		// ra.data = append(ra.data, empty[:bySize]...)
-		// num := atomic.AddUint32(&numReallocs, 1)
-		// fmt.Printf("Expanded ra.data to cap: %d. Num: %d. Calls: %d\n", cap(ra.data), num, calls)
-	}
+	*/
 
 	// We should re-reference ra.keys correctly, because the underlying array might have been
 	// switched after append.
@@ -244,7 +246,7 @@ func (ra *Bitmap) Set(x uint64) bool {
 	offset, has := ra.keys.getValue(key)
 	if !has {
 		// We need to add a container.
-		o := uint64(ra.newContainer(minSize))
+		o := ra.newContainer(minSize)
 		// offset might have been updated by setKey.
 		offset = ra.setKey(key, o)
 	}
@@ -510,6 +512,7 @@ func containerOr(ac, bc, buf []uint16, inline bool) []uint16 {
 	if at == typeArray && bt == typeArray {
 		left := array(ac)
 		right := array(bc)
+		// TODO: We should be able to inline this too.
 		return left.orArray(right, buf)
 	}
 	if at == typeArray && bt == typeBitmap {
@@ -765,18 +768,45 @@ func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 }
 
 func FastOr(bitmaps ...*Bitmap) *Bitmap {
-	var card int
+	// We first figure out the container distribution across the bitmaps. We do
+	// that by looking at the key of the container, and the cardinality. We
+	// assume the worst-case scenario where the union would result in a
+	// cardinality (per container) of the sum of cardinalities of each of the
+	// corresponding containers in other bitmaps.
+	containers := make(map[uint64]int)
 	for _, b := range bitmaps {
-		card += b.GetCardinality()
+		for i := 0; i < b.keys.numKeys(); i++ {
+			offset := b.keys.val(i)
+			cont := b.getContainer(offset)
+			card := getCardinality(cont)
+			containers[b.keys.key(i)] += card
+		}
 	}
-	fmt.Printf("Approximate card: %d\n", card)
 
+	// We use the above information to pre-generate the destination Bitmap and
+	// allocate container sizes based on the calculated cardinalities.
 	b := NewBitmap()
-	b.Grow(card * 10)
+	for key, card := range containers {
+		var offset uint64
+		if card >= 4096 {
+			offset = b.newContainer(maxSizeOfContainer)
+			c := b.getContainer(offset)
+			c[indexSize] = maxSizeOfContainer
+			c[indexType] = typeBitmap
+			b.setKey(key, offset)
+		} else {
+			offset = b.newContainer(uint16(card))
+			c := b.getContainer(offset)
+			c[indexSize] = uint16(card)
+			c[indexType] = typeArray
+			b.setKey(key, offset)
+		}
+	}
 
 	for _, bm := range bitmaps {
 		b.Or(bm)
 	}
-	fmt.Printf("Final card: %d. Size: %d\n", b.GetCardinality(), len(b.data))
+	// fmt.Printf("RESULT\n%s\n", b)
+	// fmt.Printf("Final card: %d. Size: %d\n", b.GetCardinality(), len(b.data))
 	return b
 }
