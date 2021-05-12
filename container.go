@@ -253,6 +253,9 @@ func (c array) maximum() uint16 {
 func (c array) toBitmapContainer(buf []uint16) []uint16 {
 	if len(buf) == 0 {
 		buf = make([]uint16, maxSizeOfContainer)
+	} else {
+		// TODO: This complains.
+		// assert(len(buf) == maxSizeOfContainer)
 	}
 	b := bitmap(buf)
 	b[indexSize] = maxSizeOfContainer

@@ -35,9 +35,10 @@ const mask = uint64(0xFFFFFFFFFFFF0000)
 
 // First uint64 contains the length of the node.
 type Bitmap struct {
-	data    []uint16
-	scratch []uint16
-	keys    node
+	data     []uint16
+	scratch  []uint16
+	memMoved int
+	keys     node
 }
 
 func FromBuffer(data []byte) *Bitmap {
@@ -127,51 +128,41 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 var numFastExpandCalls, numReallocs uint32
 
 func (ra *Bitmap) fastExpand(bySize uint16) {
-	// calls := atomic.AddUint32(&numFastExpandCalls, 1)
-	// if calls%100000 == 0 {
-	// 	fmt.Printf("Num fastExpand calls: %d. ra.data: cap: %d len: %d bySize: %d\n",
-	// 		calls, cap(ra.data), len(ra.data), bySize)
-	// }
-
 	prev := len(ra.keys) * 4 // Multiply by 4 to convert from u16 to u64.
-	ra.data = append(ra.data, empty[:bySize]...)
 
-	/*
-		toSize := len(ra.data) + int(bySize)
-		if toSize <= cap(ra.data) {
-			ra.data = ra.data[:toSize]
-		} else {
-			growBy := cap(ra.data)
-			if growBy < int(bySize) {
-				growBy = int(bySize)
-			}
-			out := make([]uint16, cap(ra.data)+growBy)
-			copy(out, ra.data)
-			ra.data = out[:toSize]
-			// ra.data = append(ra.data, empty[:bySize]...)
-			// num := atomic.AddUint32(&numReallocs, 1)
-			// fmt.Printf("Expanded ra.data to cap: %d. Num: %d. Calls: %d\n", cap(ra.data), num, calls)
-		}
-	*/
+	// This following statement also works. But, given how much fastExpand gets
+	// called (a lot), probably better to control allocation.
+	// ra.data = append(ra.data, empty[:bySize]...)
 
-	// We should re-reference ra.keys correctly, because the underlying array might have been
-	// switched after append.
+	toSize := len(ra.data) + int(bySize)
+	if toSize <= cap(ra.data) {
+		ra.data = ra.data[:toSize]
+		return
+	}
+	growBy := cap(ra.data)
+	if growBy < int(bySize) {
+		growBy = int(bySize)
+	}
+	out := make([]uint16, cap(ra.data)+growBy)
+	copy(out, ra.data)
+	ra.data = out[:toSize]
+	// Re-reference ra.keys correctly because underlying array has changed.
 	ra.keys = toUint64Slice(ra.data[:prev])
 }
 
 func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 	left := ra.data[offset:]
-	// prevHash := z.MemHash(left)
 
 	ra.fastExpand(bySize) // Expand the buffer.
 	right := ra.data[len(ra.data)-len(left):]
-	copy(right, left) // Move data right.
-	// afterHash := z.MemHash(right)
+	n := copy(right, left) // Move data right.
+	ra.memMoved += n
+	fmt.Printf("scootRight for offset: %d by size: %d. Moved: %d %d\n", offset, bySize, n, ra.memMoved)
+	if causePanic {
+		panic("scootRight")
+	}
 
 	Memclr(ra.data[offset : offset+uint64(bySize)]) // Zero out the space in the middle.
-	// if afterHash != prevHash {
-	// 	panic("We modified something")
-	// }
 }
 
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
@@ -197,6 +188,7 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 		// than 2048, we should just cap it to max size of 4096.
 		bySize = maxSizeOfContainer - sz
 	}
+	fmt.Printf("Expanding container at offset: %d\n", offset)
 
 	// Select the portion to the right of the container, beyond its right boundary.
 	ra.scootRight(offset+uint64(sz), bySize)
@@ -213,23 +205,80 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 	}
 }
 
+func stepSize(n uint16) uint16 {
+	// <=64 -> 128
+	// <=128 -> 256
+	// <=256 -> 512
+	// <=512 -> 1024
+	// <=1024 -> 2048
+	// >1024 -> maxSize (convert to bitmap)
+	for i := uint16(64); i <= 1024; i *= 2 {
+		if n <= i {
+			return i * 2
+		}
+	}
+	return maxSizeOfContainer
+}
+
 // copyAt is slower than just creating new containers. We should
 // investigate why. Most likely scoot is being called many many times over.
 func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
-	sz := ra.data[offset]
-	if sz == 0 {
+	dstSize := ra.data[offset]
+	if dstSize == 0 {
 		panic("Container size should NOT be zero")
 	}
-	if uint16(len(src)) > sz {
-		bySize := uint16(len(src)) - sz
-		// Select the portion to the right of the container, beyond its right boundary.
-		ra.scootRight(offset+uint64(sz), bySize)
-		ra.keys.updateOffsets(offset, uint64(bySize))
-	}
-	// fmt.Printf("copyAt offset: %d src: %d sz: %d\n",
-	// 	offset, len(src), sz)
 
+	// The src is a bitmapContainer. Just copy it over.
+	if src[indexType] == typeBitmap {
+		fmt.Printf("copyAt offset: %d src is bitmap\n", offset)
+		assert(src[indexSize] == maxSizeOfContainer)
+		bySize := uint16(maxSizeOfContainer) - dstSize
+		// Select the portion to the right of the container, beyond its right boundary.
+		ra.scootRight(offset+uint64(dstSize), bySize)
+		ra.keys.updateOffsets(offset, uint64(bySize))
+		assert(copy(ra.data[offset:], src) == len(src))
+		return
+	}
+
+	// src is an array container. Check if dstSize >= src. If so, just copy.
+	// But, do keep dstSize intact, otherwise we'd lose portion of our container.
+	if dstSize >= src[indexSize] {
+		fmt.Printf("copyAt offset: %d dstSize: %d > src: %d\n",
+			offset, dstSize, src[indexSize])
+		assert(copy(ra.data[offset:], src) == len(src))
+		ra.data[offset] = dstSize
+		return
+	}
+
+	// dstSize < src. Expand dst container.
+	targetSz := stepSize(dstSize)
+	for targetSz < src[indexSize] {
+		targetSz = stepSize(targetSz)
+	}
+	// Looks like the targetSize is now maxSize. So, convert src to bitmap container.
+	if targetSz == maxSizeOfContainer {
+		fmt.Printf("targetSz == maxSize. Converting to bitmap\n")
+		s := array(src)
+
+		bySize := uint16(maxSizeOfContainer) - dstSize
+		// Select the portion to the right of the container, beyond its right boundary.
+		ra.scootRight(offset+uint64(dstSize), bySize)
+		ra.keys.updateOffsets(offset, uint64(bySize))
+
+		// Convert the src array to bitmap and write it directly over to the container.
+		out := ra.getContainer(offset)
+		Memclr(out)
+		s.toBitmapContainer(out)
+		return
+	}
+
+	// targetSize is not maxSize. Let's expand to targetSize and copy array.
+	fmt.Printf("targetSz = %d. Copying with scoot\n", targetSz)
+	bySize := targetSz - dstSize
+	ra.scootRight(offset+uint64(dstSize), bySize)
+	ra.keys.updateOffsets(offset, uint64(bySize))
 	assert(copy(ra.data[offset:], src) == len(src))
+	ra.data[offset] = targetSz
 }
 
 func (ra Bitmap) getContainer(offset uint64) []uint16 {
@@ -381,15 +430,33 @@ func (ra *Bitmap) String() string {
 	var b strings.Builder
 	b.WriteRune('\n')
 
+	var usedSize, card int
+	usedSize += 4 * (ra.keys.numKeys())
 	for i := 0; i < ra.keys.numKeys(); i++ {
 		k := ra.keys.key(i)
 		v := ra.keys.val(i)
-
 		c := ra.getContainer(v)
+
+		sz := c[indexSize]
+		usedSize += int(sz)
+		card += int(c[indexCardinality])
+
 		b.WriteString(fmt.Sprintf(
-			"[%d] key: %#x Container [offset: %d, Size: %d, Type: %d, Card: %d]\n",
-			i, k, v, c[indexSize], c[indexType], c[indexCardinality]))
+			"[%d] key: %#x Container [Offset: %d. Size: %d. Type: %d. Card: %d. Uint16/Uid: %.2f]\n",
+			i, k, v, sz, c[indexType], c[indexCardinality],
+			float64(sz)/float64(c[indexCardinality])))
 	}
+	b.WriteString(fmt.Sprintf("Number of containers: %d. Cardinality: %d\n",
+		ra.keys.numKeys(), card))
+
+	amp := float64(len(ra.data)-usedSize) / float64(usedSize)
+	b.WriteString(fmt.Sprintf(
+		"Size in Uint16s. Used: %d. Total: %d. Space Amplification: %.2f%%. Moved: %.2fx\n",
+		usedSize, len(ra.data), amp*100.0, float64(ra.memMoved)/float64(usedSize)))
+
+	b.WriteString(fmt.Sprintf("Used Uint16/Uid: %.2f. Total Uint16/Uid: %.2f",
+		float64(usedSize)/float64(card), float64(len(ra.data))/float64(card)))
+
 	return b.String()
 }
 
@@ -512,8 +579,18 @@ func containerOr(ac, bc, buf []uint16, inline bool) []uint16 {
 	if at == typeArray && bt == typeArray {
 		left := array(ac)
 		right := array(bc)
-		// TODO: We should be able to inline this too.
-		return left.orArray(right, buf)
+		out := left.orArray(right, buf)
+
+		if inline && out[indexType] == typeArray && left[indexSize] >= out[indexSize] {
+			// If we can do inline Or, and the output is an array, and the left
+			// container has more space than what we need, then just copy it
+			// over.
+			sz := left[indexSize]
+			copy(left, out)
+			left[indexSize] = sz
+			return nil
+		}
+		return out
 	}
 	if at == typeArray && bt == typeBitmap {
 		left := array(ac)
@@ -690,12 +767,14 @@ func (ra *Bitmap) Or(bm *Bitmap) {
 			ac := a.getContainer(offset)
 			c := containerOr(ac, bc, buf, true)
 			if len(c) > 0 {
-				// a.copyAt(offset, c)
-				// a.setKey(bk, offset)
-				// TODO: We should calculate the "wastage" in the Bitmap.
-				offset := a.newContainer(uint16(len(toByteSlice(c))))
-				copy(a.getContainer(offset), c)
+				fmt.Printf("containerOr. ac[indexSize]: %d buf[indexSize]: %d\n",
+					ac[indexSize], buf[indexSize])
+				a.copyAt(offset, c)
 				a.setKey(bk, offset)
+				// TODO: We should calculate the "wastage" in the Bitmap.
+				// offset := a.newContainer(uint16(len(toByteSlice(c))))
+				// copy(a.getContainer(offset), c)
+				// a.setKey(bk, offset)
 			}
 		}
 		bi++
@@ -767,7 +846,10 @@ func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 	return b
 }
 
+var causePanic bool
+
 func FastOr(bitmaps ...*Bitmap) *Bitmap {
+	fmt.Println("NOW NOW NOW -----------------")
 	// We first figure out the container distribution across the bitmaps. We do
 	// that by looking at the key of the container, and the cardinality. We
 	// assume the worst-case scenario where the union would result in a
@@ -785,28 +867,44 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 
 	// We use the above information to pre-generate the destination Bitmap and
 	// allocate container sizes based on the calculated cardinalities.
-	b := NewBitmap()
+	// var sz int
+	out := NewBitmap()
+	// First create the keys. We do this as a separate step, because keys are the left most portion of the data array. Adding space there requires moving a lot of pieces.
+	for key := range containers {
+		out.setKey(key, 0)
+	}
+	// Then create the bitmap containers.
 	for key, card := range containers {
-		var offset uint64
 		if card >= 4096 {
-			offset = b.newContainer(maxSizeOfContainer)
-			c := b.getContainer(offset)
+			offset := out.newContainer(maxSizeOfContainer)
+			c := out.getContainer(offset)
 			c[indexSize] = maxSizeOfContainer
 			c[indexType] = typeBitmap
-			b.setKey(key, offset)
-		} else {
-			offset = b.newContainer(uint16(card))
-			c := b.getContainer(offset)
-			c[indexSize] = uint16(card)
-			c[indexType] = typeArray
-			b.setKey(key, offset)
+			out.setKey(key, offset)
 		}
 	}
-
-	for _, bm := range bitmaps {
-		b.Or(bm)
+	// Then create the array containers at the end. This allows them to expand
+	// without having to move a lot of memory.
+	for key, card := range containers {
+		// Ensure this condition exactly maps up with above.
+		if card < 4096 {
+			offset := out.newContainer(uint16(card))
+			c := out.getContainer(offset)
+			c[indexSize] = uint16(card)
+			c[indexType] = typeArray
+			out.setKey(key, offset)
+		}
 	}
-	// fmt.Printf("RESULT\n%s\n", b)
+	// before := cap(b.data)
+	// b.Grow(sz)
+	// fmt.Printf("Before: %d. After Grow by %d: %d\n", before, sz, cap(b.data))
+
+	fmt.Printf("BEFORE\n%s\n", out)
+	// causePanic = true
+	for _, bm := range bitmaps {
+		out.Or(bm)
+	}
+	fmt.Printf("RESULT\n%s\n", out)
 	// fmt.Printf("Final card: %d. Size: %d\n", b.GetCardinality(), len(b.data))
-	return b
+	return out
 }
