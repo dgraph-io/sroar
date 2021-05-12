@@ -150,6 +150,8 @@ func (ra *Bitmap) fastExpand(bySize uint16) {
 	ra.keys = toUint64Slice(ra.data[:prev])
 }
 
+// scootRight isn't aware of containers. It's going to create empty space of
+// bySize at the given offset in ra.data.
 func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 	left := ra.data[offset:]
 
@@ -157,10 +159,6 @@ func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 	right := ra.data[len(ra.data)-len(left):]
 	n := copy(right, left) // Move data right.
 	ra.memMoved += n
-	fmt.Printf("scootRight for offset: %d by size: %d. Moved: %d %d\n", offset, bySize, n, ra.memMoved)
-	if causePanic {
-		panic("scootRight")
-	}
 
 	Memclr(ra.data[offset : offset+uint64(bySize)]) // Zero out the space in the middle.
 }
@@ -188,7 +186,7 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 		// than 2048, we should just cap it to max size of 4096.
 		bySize = maxSizeOfContainer - sz
 	}
-	fmt.Printf("Expanding container at offset: %d\n", offset)
+	// fmt.Printf("Expanding container at offset: %d\n", offset)
 
 	// Select the portion to the right of the container, beyond its right boundary.
 	ra.scootRight(offset+uint64(sz), bySize)
@@ -264,6 +262,9 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 		// Select the portion to the right of the container, beyond its right boundary.
 		ra.scootRight(offset+uint64(dstSize), bySize)
 		ra.keys.updateOffsets(offset, uint64(bySize))
+
+		// Update the space of the container, so getContainer would work correctly.
+		ra.data[offset] = maxSizeOfContainer
 
 		// Convert the src array to bitmap and write it directly over to the container.
 		out := ra.getContainer(offset)
@@ -846,10 +847,7 @@ func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 	return b
 }
 
-var causePanic bool
-
 func FastOr(bitmaps ...*Bitmap) *Bitmap {
-	fmt.Println("NOW NOW NOW -----------------")
 	// We first figure out the container distribution across the bitmaps. We do
 	// that by looking at the key of the container, and the cardinality. We
 	// assume the worst-case scenario where the union would result in a
@@ -888,6 +886,9 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	for key, card := range containers {
 		// Ensure this condition exactly maps up with above.
 		if card < 4096 {
+			if card < minSizeOfContainer {
+				card = minSizeOfContainer
+			}
 			offset := out.newContainer(uint16(card))
 			c := out.getContainer(offset)
 			c[indexSize] = uint16(card)
@@ -895,16 +896,9 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 			out.setKey(key, offset)
 		}
 	}
-	// before := cap(b.data)
-	// b.Grow(sz)
-	// fmt.Printf("Before: %d. After Grow by %d: %d\n", before, sz, cap(b.data))
 
-	fmt.Printf("BEFORE\n%s\n", out)
-	// causePanic = true
 	for _, bm := range bitmaps {
 		out.Or(bm)
 	}
-	fmt.Printf("RESULT\n%s\n", out)
-	// fmt.Printf("Final card: %d. Size: %d\n", b.GetCardinality(), len(b.data))
 	return out
 }
