@@ -1,6 +1,7 @@
 package roar
 
 import (
+	"archive/zip"
 	"math"
 	"math/rand"
 	"testing"
@@ -423,6 +424,52 @@ func TestOr(t *testing.T) {
 	a.Or(b)
 	require.Equal(t, N, a.GetCardinality())
 
+}
+
+func TestOrRealData(t *testing.T) {
+	test := func(t *testing.T, dataset string) {
+		path, err := getDataSetPath(dataset)
+		require.NoError(t, err)
+
+		zipFile, err := zip.OpenReader(path)
+		require.NoError(t, err)
+		defer zipFile.Close()
+
+		bitmaps := make([]*Bitmap, len(zipFile.File))
+		valMap := make(map[uint64]struct{})
+		// For each file in the zip, create a new bitmap and check the created bitmap has correct
+		// cardinality as well as it has all the elements.
+		for i, f := range zipFile.File {
+			vals, err := processZipFile(f)
+			require.NoError(t, err)
+
+			b := NewBitmap()
+			for _, v := range vals {
+				b.Set(v)
+				valMap[v] = struct{}{}
+			}
+			require.Equal(t, len(vals), b.GetCardinality())
+			for _, v := range vals {
+				require.True(t, b.Has(v))
+			}
+			bitmaps[i] = b
+		}
+
+		// Check that union operation is correct.
+		res := FastOr(bitmaps...)
+		c := res.GetCardinality()
+
+		t.Logf("Cardinality: %d\n", c)
+		require.Equal(t, len(valMap), c)
+
+		for k, _ := range valMap {
+			require.True(t, res.Has(k))
+		}
+	}
+
+	for _, dataset := range realDatasets {
+		t.Run(dataset, func(t *testing.T) { test(t, dataset) })
+	}
 }
 
 func TestCardinality(t *testing.T) {

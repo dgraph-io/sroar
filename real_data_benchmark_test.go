@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/pkg/errors"
 )
 
 // To run these benchmarks: go test -bench BenchmarkRealDataFastOr -run -
@@ -20,92 +22,97 @@ var realDatasets = []string{
 	"weather_sept_85", "wikileaks-noquotes_srt", "wikileaks-noquotes",
 }
 
-func retrieveRealDataBitmaps(datasetName string, optimize bool) ([]*Bitmap, error) {
+func getDataSetPath(dataset string) (string, error) {
 	gopath, ok := os.LookupEnv("GOPATH")
 	if !ok {
-		return nil, fmt.Errorf("GOPATH not set. It's required to locate real-roaring-dataset.")
+		return "", fmt.Errorf("GOPATH not set. It's required to locate real-roaring-dataset.")
 	}
 
 	basePath := path.Join(gopath, "src", "github.com", "RoaringBitmap", "real-roaring-datasets")
-
 	if _, err := os.Stat(basePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("real-roaring-datasets does not exist. " +
+		return "", fmt.Errorf("real-roaring-datasets does not exist. " +
 			"Run `go get github.com/RoaringBitmap/real-roaring-datasets`")
 	}
 
-	datasetPath := path.Join(basePath, datasetName+".zip")
-
+	datasetPath := path.Join(basePath, dataset+".zip")
 	if _, err := os.Stat(datasetPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("dataset %s does not exist, tried path: %s",
-			datasetName, datasetPath)
+		return "", fmt.Errorf("dataset %s does not exist, tried path: %s",
+			dataset, datasetPath)
 	}
+	return datasetPath, nil
+}
 
+func retrieveRealDataBitmaps(datasetName string, optimize bool) ([]*Bitmap, error) {
+	datasetPath, err := getDataSetPath(datasetName)
 	zipFile, err := zip.OpenReader(datasetPath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening dataset %s zipfile, cause: %v", datasetPath, err)
 	}
 	defer zipFile.Close()
 
-	var largestFileSize uint64
-	for _, f := range zipFile.File {
-		if f.UncompressedSize64 > largestFileSize {
-			largestFileSize = f.UncompressedSize64
-		}
-	}
-
 	bitmaps := make([]*Bitmap, len(zipFile.File))
-	buf := make([]byte, largestFileSize)
-	var bufStep uint64 = 32768 // apparently the largest buffer zip can read
 	for i, f := range zipFile.File {
-		r, err := f.Open()
+		res, err := processZipFile(f)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read bitmap file %s from dataset %s, cause: %v",
-				f.Name, datasetName, err)
+			return nil, errors.Wrap(err, "while processing zip file")
 		}
-
-		var totalReadBytes uint64
-
-		for {
-			var endOffset uint64
-			if f.UncompressedSize64 < totalReadBytes+bufStep {
-				endOffset = f.UncompressedSize64
-			} else {
-				endOffset = totalReadBytes + bufStep
-			}
-
-			readBytes, err := r.Read(buf[totalReadBytes:endOffset])
-			totalReadBytes += uint64(readBytes)
-
-			if err == io.EOF {
-				r.Close()
-				break
-			} else if err != nil {
-				r.Close()
-				return nil, fmt.Errorf("could not read content of file %s from dataset %s, err: %v",
-					f.Name, datasetName, err)
-			}
-		}
-
-		elemsAsBytes := bytes.Split(buf[:totalReadBytes], []byte{44}) // 44 is a comma
-
 		b := NewBitmap()
-		for _, elemBytes := range elemsAsBytes {
-			elemStr := strings.TrimSpace(string(elemBytes))
-
-			e, err := strconv.ParseUint(elemStr, 10, 32)
-			if err != nil {
-				r.Close()
-				return nil, fmt.Errorf("could not parse %s as uint32. Reading %s from %s. err: %v",
-					elemStr, f.Name, datasetName, err)
-			}
-
-			b.Set(uint64(e))
+		for _, v := range res {
+			b.Set(v)
 		}
-
 		bitmaps[i] = b
 	}
 
 	return bitmaps, nil
+}
+
+func processZipFile(f *zip.File) ([]uint64, error) {
+	r, err := f.Open()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read bitmap file %s, cause: %v",
+			f.Name, err)
+	}
+
+	buf := make([]byte, f.UncompressedSize)
+	var bufStep uint64 = 32768 // apparently the largest buffer zip can read
+	var totalReadBytes uint64
+
+	for {
+		var endOffset uint64
+		if f.UncompressedSize64 < totalReadBytes+bufStep {
+			endOffset = f.UncompressedSize64
+		} else {
+			endOffset = totalReadBytes + bufStep
+		}
+
+		readBytes, err := r.Read(buf[totalReadBytes:endOffset])
+		totalReadBytes += uint64(readBytes)
+
+		if err == io.EOF {
+			r.Close()
+			break
+		} else if err != nil {
+			r.Close()
+			return nil, fmt.Errorf("could not read content of file %s , err: %v",
+				f.Name, err)
+		}
+	}
+
+	elemsAsBytes := bytes.Split(buf[:totalReadBytes], []byte{44}) // 44 is a comma
+
+	var result []uint64
+	for _, elemBytes := range elemsAsBytes {
+		elemStr := strings.TrimSpace(string(elemBytes))
+
+		e, err := strconv.ParseUint(elemStr, 10, 32)
+		if err != nil {
+			r.Close()
+			return nil, fmt.Errorf("could not parse %s as uint32. Reading %s, err: %v",
+				elemStr, f.Name, err)
+		}
+		result = append(result, e)
+	}
+	return result, nil
 }
 
 func benchmarkRealDataAggregate(b *testing.B, aggregator func(b []*Bitmap) int) {
