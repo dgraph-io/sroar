@@ -35,10 +35,12 @@ const mask = uint64(0xFFFFFFFFFFFF0000)
 
 // First uint64 contains the length of the node.
 type Bitmap struct {
-	data     []uint16
-	scratch  []uint16
+	data []uint16
+	keys node
+
+	// memMoved keeps track of how many uint16 moves we had to do. The smaller
+	// this number, the more efficient we have been.
 	memMoved int
-	keys     node
 }
 
 func FromBuffer(data []byte) *Bitmap {
@@ -48,9 +50,8 @@ func FromBuffer(data []byte) *Bitmap {
 	du := toUint16Slice(data)
 	x := toUint64Slice(du[:4])[0]
 	return &Bitmap{
-		data:    du,
-		scratch: make([]uint16, maxSizeOfContainer),
-		keys:    toUint64Slice(du[:x]),
+		data: du,
+		keys: toUint64Slice(du[:x]),
 	}
 }
 
@@ -78,17 +79,6 @@ func NewBitmapWith(numKeys int) *Bitmap {
 	ra.keys.setNumKeys(1)
 
 	return ra
-}
-
-func (b *Bitmap) Grow(n int) {
-	curSz := len(b.data)
-
-	out := make([]uint16, len(b.data)+n)
-	copy(out, b.data)
-	b.data = out[:curSz]
-
-	x := toUint64Slice(b.data[:4])[0]
-	b.keys = toUint64Slice(b.data[:x])
 }
 
 // setKey sets a key and container offset.
@@ -151,7 +141,8 @@ func (ra *Bitmap) fastExpand(bySize uint16) {
 }
 
 // scootRight isn't aware of containers. It's going to create empty space of
-// bySize at the given offset in ra.data.
+// bySize at the given offset in ra.data. The offset doesn't need to line up
+// with a container.
 func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 	left := ra.data[offset:]
 
@@ -186,19 +177,18 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 		// than 2048, we should just cap it to max size of 4096.
 		bySize = maxSizeOfContainer - sz
 	}
-	// fmt.Printf("Expanding container at offset: %d\n", offset)
 
 	// Select the portion to the right of the container, beyond its right boundary.
 	ra.scootRight(offset+uint64(sz), bySize)
 	ra.keys.updateOffsets(offset, uint64(bySize))
 
 	if sz < 2048 {
-		setSize(ra.data[offset:], sz+bySize)
+		ra.data[offset] = sz + bySize
 
 	} else {
 		// Convert to bitmap container.
 		src := array(ra.getContainer(offset))
-		buf := src.toBitmapContainer(ra.scratch)
+		buf := src.toBitmapContainer(nil)
 		assert(copy(ra.data[offset:], buf) == maxSizeOfContainer)
 	}
 }
@@ -218,8 +208,14 @@ func stepSize(n uint16) uint16 {
 	return maxSizeOfContainer
 }
 
-// copyAt is slower than just creating new containers. We should
-// investigate why. Most likely scoot is being called many many times over.
+// copyAt would copy over a given container via src, into the container at
+// offset. If src is a bitmap, it would copy it over directly. If src is an
+// array container, then it would follow these paths:
+// - If src is smaller than dst, copy it over.
+// - If not, look for target size for dst using the stepSize function.
+// - If target size is maxSize, then convert src to a bitmap container, and
+// 		copy to dst.
+// - If target size is not max size, then expand dst container and copy src.
 func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 	dstSize := ra.data[offset]
 	if dstSize == 0 {
@@ -228,7 +224,6 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 
 	// The src is a bitmapContainer. Just copy it over.
 	if src[indexType] == typeBitmap {
-		fmt.Printf("copyAt offset: %d src is bitmap\n", offset)
 		assert(src[indexSize] == maxSizeOfContainer)
 		bySize := uint16(maxSizeOfContainer) - dstSize
 		// Select the portion to the right of the container, beyond its right boundary.
@@ -241,8 +236,6 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 	// src is an array container. Check if dstSize >= src. If so, just copy.
 	// But, do keep dstSize intact, otherwise we'd lose portion of our container.
 	if dstSize >= src[indexSize] {
-		fmt.Printf("copyAt offset: %d dstSize: %d > src: %d\n",
-			offset, dstSize, src[indexSize])
 		assert(copy(ra.data[offset:], src) == len(src))
 		ra.data[offset] = dstSize
 		return
@@ -255,7 +248,6 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 	}
 	// Looks like the targetSize is now maxSize. So, convert src to bitmap container.
 	if targetSz == maxSizeOfContainer {
-		fmt.Printf("targetSz == maxSize. Converting to bitmap\n")
 		s := array(src)
 
 		bySize := uint16(maxSizeOfContainer) - dstSize
@@ -274,7 +266,6 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 	}
 
 	// targetSize is not maxSize. Let's expand to targetSize and copy array.
-	fmt.Printf("targetSz = %d. Copying with scoot\n", targetSz)
 	bySize := targetSz - dstSize
 	ra.scootRight(offset+uint64(dstSize), bySize)
 	ra.keys.updateOffsets(offset, uint64(bySize))
@@ -443,7 +434,7 @@ func (ra *Bitmap) String() string {
 		card += int(c[indexCardinality])
 
 		b.WriteString(fmt.Sprintf(
-			"[%d] key: %#x Container [Offset: %d. Size: %d. Type: %d. Card: %d. Uint16/Uid: %.2f]\n",
+			"[%d] Key: %#x. Offset: %d. Size: %d. Type: %d. Card: %d. Uint16/Uid: %.2f\n",
 			i, k, v, sz, c[indexType], c[indexCardinality],
 			float64(sz)/float64(c[indexCardinality])))
 	}
@@ -580,18 +571,7 @@ func containerOr(ac, bc, buf []uint16, inline bool) []uint16 {
 	if at == typeArray && bt == typeArray {
 		left := array(ac)
 		right := array(bc)
-		out := left.orArray(right, buf)
-
-		if inline && out[indexType] == typeArray && left[indexSize] >= out[indexSize] {
-			// If we can do inline Or, and the output is an array, and the left
-			// container has more space than what we need, then just copy it
-			// over.
-			sz := left[indexSize]
-			copy(left, out)
-			left[indexSize] = sz
-			return nil
-		}
-		return out
+		return left.orArray(right, buf)
 	}
 	if at == typeArray && bt == typeBitmap {
 		left := array(ac)
@@ -744,38 +724,29 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 	}
 }
 
-func (ra *Bitmap) Or(bm *Bitmap) {
-	bi, bn := 0, bm.keys.numKeys()
-	a, b := ra, bm
+func (dst *Bitmap) Or(src *Bitmap) {
+	bi, bn := 0, src.keys.numKeys()
+	// a, b := dst, src
+	// b := src
 
 	buf := make([]uint16, maxSizeOfContainer)
 	for bi < bn {
-		bk := b.keys.key(bi)
-		bc := b.getContainer(b.keys.val(bi))
-		idx := a.keys.search(bk)
+		srcCont := src.getContainer(src.keys.val(bi))
+		key := src.keys.key(bi)
 
-		// bk is not in a, just add container corresponding to bk to a.
-		if idx >= a.keys.numKeys() || a.keys.key(idx) != bk {
-			offset := a.newContainer(uint16(len(toByteSlice(bc))))
-			copy(a.getContainer(offset), bc)
-			a.setKey(bk, offset)
+		idx := dst.keys.search(key)
+		if idx >= dst.keys.numKeys() || dst.keys.key(idx) != key {
+			// srcCont doesn't exist in dst. So, copy it over.
+			offset := dst.newContainer(uint16(len(srcCont)))
+			copy(dst.getContainer(offset), srcCont)
+			dst.setKey(key, offset)
 		} else {
 			// bk is also present in a, do a container or.
-			//TODO: Need to cleanup the old container in a.
-			// For bitmap containers in a, we won't need to do any cleanup. But,
-			// for array ORs, we'd have to.
-			offset := a.keys.val(idx)
-			ac := a.getContainer(offset)
-			c := containerOr(ac, bc, buf, true)
-			if len(c) > 0 {
-				fmt.Printf("containerOr. ac[indexSize]: %d buf[indexSize]: %d\n",
-					ac[indexSize], buf[indexSize])
-				a.copyAt(offset, c)
-				a.setKey(bk, offset)
-				// TODO: We should calculate the "wastage" in the Bitmap.
-				// offset := a.newContainer(uint16(len(toByteSlice(c))))
-				// copy(a.getContainer(offset), c)
-				// a.setKey(bk, offset)
+			offset := dst.keys.val(idx)
+			dstCont := dst.getContainer(offset)
+			if c := containerOr(dstCont, srcCont, buf, true); len(c) > 0 {
+				dst.copyAt(offset, c)
+				dst.setKey(key, offset)
 			}
 		}
 		bi++

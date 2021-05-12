@@ -33,7 +33,6 @@ const (
 	maxSizeOfContainer = 4 + (1<<16)/16
 )
 
-func setSize(data []uint16, sz uint16)   { data[0] = sz }
 func dataAt(data []uint16, i int) uint16 { return data[int(startIdx)+i] }
 
 func getCardinality(data []uint16) int {

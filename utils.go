@@ -62,15 +62,6 @@ func toUint16Slice(b []byte) (result []uint16) {
 	return u16s
 }
 
-// func toUint32Slice(b []uint16) (result []uint32) {
-// 	var u32s []uint32
-// 	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u32s))
-// 	hdr.Len = len(b) / 2
-// 	hdr.Cap = hdr.Len
-// 	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
-// 	return u32s
-// }
-
 // BytesToU32Slice converts the given byte slice to uint32 slice
 func toUint64Slice(b []uint16) []uint64 {
 	var u64s []uint64

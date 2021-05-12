@@ -178,10 +178,10 @@ func TestOrRealData(t *testing.T) {
 		res := FastOr(bitmaps...)
 		c := res.GetCardinality()
 
-		t.Logf("Cardinality: %d\n", c)
+		t.Logf("Result: %s\n", res)
 		require.Equal(t, len(valMap), c)
 
-		for k, _ := range valMap {
+		for k := range valMap {
 			require.True(t, res.Has(k))
 		}
 	}
