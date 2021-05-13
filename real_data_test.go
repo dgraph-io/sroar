@@ -124,7 +124,8 @@ func benchmarkRealDataAggregate(b *testing.B, aggregator func(b []*Bitmap) int) 
 				b.Fatal(err)
 			}
 			c := aggregator(bitmaps)
-			b.Logf("Got cardinality: %d\n", c)
+			_ = c
+			// b.Logf("Got cardinality: %d\n", c)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				aggregator(bitmaps)
