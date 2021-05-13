@@ -25,12 +25,12 @@ const (
 	// 2^16 will not fit in uint16.
 	startIdx uint16 = 4
 
-	minSizeOfContainer = 64 // In Uint16.
+	minContainerSize = 64 // In Uint16.
 	// Bitmap container can contain 2^16 integers. Each integer would use one bit to represent.
 	// Given that our data is represented in []uint16s, that'd mean the size of container to store
 	// it would be divided by 16.
 	// 4 for header and 4096 for storing bitmap container. In Uint16.
-	maxSizeOfContainer = 4 + (1<<16)/16
+	maxContainerSize = 4 + (1<<16)/16
 )
 
 func dataAt(data []uint16, i int) uint16 { return data[int(startIdx)+i] }
@@ -251,13 +251,13 @@ func (c array) maximum() uint16 {
 
 func (c array) toBitmapContainer(buf []uint16) []uint16 {
 	if len(buf) == 0 {
-		buf = make([]uint16, maxSizeOfContainer)
+		buf = make([]uint16, maxContainerSize)
 	} else {
-		// TODO: This complains.
-		// assert(len(buf) == maxSizeOfContainer)
+		assert(len(buf) == maxContainerSize)
 	}
+
 	b := bitmap(buf)
-	b[indexSize] = maxSizeOfContainer
+	b[indexSize] = maxContainerSize
 	b[indexType] = typeBitmap
 	setCardinality(b, getCardinality(c))
 
@@ -326,8 +326,8 @@ func (b bitmap) has(x uint16) bool {
 
 // TODO: This can perhaps be using SIMD instructions.
 func (b bitmap) andBitmap(other bitmap) []uint16 {
-	out := make([]uint16, maxSizeOfContainer)
-	out[indexSize] = maxSizeOfContainer
+	out := make([]uint16, maxContainerSize)
+	out[indexSize] = maxContainerSize
 	out[indexType] = typeBitmap
 	var num int
 	for i := 4; i < len(b); i++ {
@@ -345,7 +345,7 @@ func (b bitmap) orBitmap(other bitmap, buf []uint16) []uint16 {
 	} else {
 		copy(buf, b) // Copy over first.
 	}
-	buf[indexSize] = maxSizeOfContainer
+	buf[indexSize] = maxContainerSize
 	buf[indexType] = typeBitmap
 
 	var num int
@@ -363,7 +363,7 @@ func (b bitmap) orBitmap(other bitmap, buf []uint16) []uint16 {
 
 func (b bitmap) andNotBitmap(other bitmap, buf []uint16) []uint16 {
 	copy(buf, b) // Copy over first.
-	buf[indexSize] = maxSizeOfContainer
+	buf[indexSize] = maxContainerSize
 	buf[indexType] = typeBitmap
 
 	var num int

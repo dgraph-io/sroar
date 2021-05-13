@@ -24,7 +24,6 @@ import (
 
 var (
 	empty          = make([]uint16, 16<<20)
-	minSize        = uint16(32)
 	indexTotalSize = 0
 	indexNumKeys   = 1
 	// index 2 and 3 are unused now.
@@ -73,7 +72,7 @@ func NewBitmapWith(numKeys int) *Bitmap {
 
 	// Always generate a container for key = 0x00. Otherwise, node gets confused
 	// about whether a zero key is a new key or not.
-	offset := ra.newContainer(minSizeOfContainer)
+	offset := ra.newContainer(minContainerSize)
 	// First two are for num keys. index=2 -> 0 key. index=3 -> offset.
 	ra.keys.setAt(indexStart+1, offset)
 	ra.keys.setNumKeys(1)
@@ -114,8 +113,6 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	}
 	return offset + bySize
 }
-
-var numFastExpandCalls, numReallocs uint32
 
 func (ra *Bitmap) fastExpand(bySize uint16) {
 	prev := len(ra.keys) * 4 // Multiply by 4 to convert from u16 to u64.
@@ -175,7 +172,7 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 	if sz >= 2048 {
 		// Size is in uint16. Half of max allowed size. If we're expanding the container by more
 		// than 2048, we should just cap it to max size of 4096.
-		bySize = maxSizeOfContainer - sz
+		bySize = maxContainerSize - sz
 	}
 
 	// Select the portion to the right of the container, beyond its right boundary.
@@ -189,10 +186,13 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 		// Convert to bitmap container.
 		src := array(ra.getContainer(offset))
 		buf := src.toBitmapContainer(nil)
-		assert(copy(ra.data[offset:], buf) == maxSizeOfContainer)
+		assert(copy(ra.data[offset:], buf) == maxContainerSize)
 	}
 }
 
+// stepSize is used for container expansion. For a container of given size n,
+// stepSize would return the target size. This function is used to reduce the
+// number of times expansion needs to happen for each container.
 func stepSize(n uint16) uint16 {
 	// <=64 -> 128
 	// <=128 -> 256
@@ -205,7 +205,7 @@ func stepSize(n uint16) uint16 {
 			return i * 2
 		}
 	}
-	return maxSizeOfContainer
+	return maxContainerSize
 }
 
 // copyAt would copy over a given container via src, into the container at
@@ -224,8 +224,8 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 
 	// The src is a bitmapContainer. Just copy it over.
 	if src[indexType] == typeBitmap {
-		assert(src[indexSize] == maxSizeOfContainer)
-		bySize := uint16(maxSizeOfContainer) - dstSize
+		assert(src[indexSize] == maxContainerSize)
+		bySize := uint16(maxContainerSize) - dstSize
 		// Select the portion to the right of the container, beyond its right boundary.
 		ra.scootRight(offset+uint64(dstSize), bySize)
 		ra.keys.updateOffsets(offset, uint64(bySize))
@@ -241,22 +241,23 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 		return
 	}
 
-	// dstSize < src. Expand dst container.
+	// dstSize < src. Determine the target size of the container.
 	targetSz := stepSize(dstSize)
 	for targetSz < src[indexSize] {
 		targetSz = stepSize(targetSz)
 	}
-	// Looks like the targetSize is now maxSize. So, convert src to bitmap container.
-	if targetSz == maxSizeOfContainer {
+
+	if targetSz == maxContainerSize {
+		// Looks like the targetSize is now maxSize. So, convert src to bitmap container.
 		s := array(src)
 
-		bySize := uint16(maxSizeOfContainer) - dstSize
+		bySize := uint16(maxContainerSize) - dstSize
 		// Select the portion to the right of the container, beyond its right boundary.
 		ra.scootRight(offset+uint64(dstSize), bySize)
 		ra.keys.updateOffsets(offset, uint64(bySize))
 
 		// Update the space of the container, so getContainer would work correctly.
-		ra.data[offset] = maxSizeOfContainer
+		ra.data[offset] = maxContainerSize
 
 		// Convert the src array to bitmap and write it directly over to the container.
 		out := ra.getContainer(offset)
@@ -287,7 +288,7 @@ func (ra *Bitmap) Set(x uint64) bool {
 	offset, has := ra.keys.getValue(key)
 	if !has {
 		// We need to add a container.
-		o := ra.newContainer(minSize)
+		o := ra.newContainer(minContainerSize)
 		// offset might have been updated by setKey.
 		offset = ra.setKey(key, o)
 	}
@@ -360,7 +361,7 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		key := k << 16
 		_, has := ra.keys.getValue(key)
 		if has {
-			off := ra.newContainer(minSizeOfContainer)
+			off := ra.newContainer(minContainerSize)
 			ra.setKey(key, off)
 		}
 	}
@@ -536,6 +537,7 @@ func containerAnd(ac, bc []uint16) []uint16 {
 	panic("containerAnd: We should not reach here")
 }
 
+// TODO: Optimize this function.
 func containerAndNot(ac, bc, buf []uint16) []uint16 {
 	at := ac[indexType]
 	bt := bc[indexType]
@@ -571,6 +573,14 @@ func containerOr(ac, bc, buf []uint16, inline bool) []uint16 {
 	if at == typeArray && bt == typeArray {
 		left := array(ac)
 		right := array(bc)
+		// We can't always inline this function. If the right container has
+		// enough entries, trying to do a union with the left container inplace
+		// could end up overwriting the left container entries. So, we use a
+		// buffer to hold all output, and then copy it over to left.
+		//
+		// TODO: If right doesn't have a lot of entries, we could just iterate
+		// over left and merge the entries from right inplace. Would be faster
+		// than copying over all entries into buffer. Worth trying that approach.
 		return left.orArray(right, buf)
 	}
 	if at == typeArray && bt == typeBitmap {
@@ -621,7 +631,7 @@ func (ra *Bitmap) And(bm *Bitmap) {
 			bi++
 		} else if ak < bk {
 			// need to remove the container of a
-			off := a.newContainer(minSizeOfContainer)
+			off := a.newContainer(minContainerSize)
 			a.setKey(ak, off)
 			ai++
 		} else {
@@ -629,7 +639,7 @@ func (ra *Bitmap) And(bm *Bitmap) {
 		}
 	}
 	for ai < an {
-		off := a.newContainer(minSizeOfContainer)
+		off := a.newContainer(minContainerSize)
 		a.setKey(a.keys.key(ai), off)
 		ai++
 	}
@@ -673,7 +683,7 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 	ai, an := 0, a.keys.numKeys()
 	bi, bn := 0, b.keys.numKeys()
 
-	buf := make([]uint16, maxSizeOfContainer)
+	buf := make([]uint16, maxContainerSize)
 
 	for ai < an && bi < bn {
 		ak := a.keys.key(ai)
@@ -725,31 +735,29 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 }
 
 func (dst *Bitmap) Or(src *Bitmap) {
-	bi, bn := 0, src.keys.numKeys()
-	// a, b := dst, src
-	// b := src
+	srcIdx, numKeys := 0, src.keys.numKeys()
 
-	buf := make([]uint16, maxSizeOfContainer)
-	for bi < bn {
-		srcCont := src.getContainer(src.keys.val(bi))
-		key := src.keys.key(bi)
+	buf := make([]uint16, maxContainerSize)
+	for srcIdx < numKeys {
+		srcCont := src.getContainer(src.keys.val(srcIdx))
+		key := src.keys.key(srcIdx)
 
-		idx := dst.keys.search(key)
-		if idx >= dst.keys.numKeys() || dst.keys.key(idx) != key {
+		dstIdx := dst.keys.search(key)
+		if dstIdx >= dst.keys.numKeys() || dst.keys.key(dstIdx) != key {
 			// srcCont doesn't exist in dst. So, copy it over.
 			offset := dst.newContainer(uint16(len(srcCont)))
 			copy(dst.getContainer(offset), srcCont)
 			dst.setKey(key, offset)
 		} else {
-			// bk is also present in a, do a container or.
-			offset := dst.keys.val(idx)
+			// Container exists in dst as well. Do an inline containerOr.
+			offset := dst.keys.val(dstIdx)
 			dstCont := dst.getContainer(offset)
 			if c := containerOr(dstCont, srcCont, buf, true); len(c) > 0 {
 				dst.copyAt(offset, c)
 				dst.setKey(key, offset)
 			}
 		}
-		bi++
+		srcIdx++
 	}
 }
 
@@ -757,7 +765,7 @@ func Or(a, b *Bitmap) *Bitmap {
 	ai, an := 0, a.keys.numKeys()
 	bi, bn := 0, b.keys.numKeys()
 
-	buf := make([]uint16, maxSizeOfContainer)
+	buf := make([]uint16, maxContainerSize)
 	res := NewBitmap()
 	for ai < an && bi < bn {
 		ak := a.keys.key(ai)
@@ -818,6 +826,8 @@ func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 	return b
 }
 
+// FastOr would merge given Bitmaps into one Bitmap. This is faster than
+// doing an OR over the bitmaps iteratively.
 func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	// We first figure out the container distribution across the bitmaps. We do
 	// that by looking at the key of the container, and the cardinality. We
@@ -838,16 +848,18 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	// allocate container sizes based on the calculated cardinalities.
 	// var sz int
 	out := NewBitmap()
-	// First create the keys. We do this as a separate step, because keys are the left most portion of the data array. Adding space there requires moving a lot of pieces.
+	// First create the keys. We do this as a separate step, because keys are
+	// the left most portion of the data array. Adding space there requires
+	// moving a lot of pieces.
 	for key := range containers {
 		out.setKey(key, 0)
 	}
 	// Then create the bitmap containers.
 	for key, card := range containers {
 		if card >= 4096 {
-			offset := out.newContainer(maxSizeOfContainer)
+			offset := out.newContainer(maxContainerSize)
 			c := out.getContainer(offset)
-			c[indexSize] = maxSizeOfContainer
+			c[indexSize] = maxContainerSize
 			c[indexType] = typeBitmap
 			out.setKey(key, offset)
 		}
@@ -857,8 +869,8 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	for key, card := range containers {
 		// Ensure this condition exactly maps up with above.
 		if card < 4096 {
-			if card < minSizeOfContainer {
-				card = minSizeOfContainer
+			if card < minContainerSize {
+				card = minContainerSize
 			}
 			offset := out.newContainer(uint16(card))
 			c := out.getContainer(offset)
@@ -868,6 +880,7 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 		}
 	}
 
+	// out Bitmap is ready to be ORed with the given Bitmaps.
 	for _, bm := range bitmaps {
 		out.Or(bm)
 	}
