@@ -19,6 +19,7 @@ package roar
 import (
 	"math/rand"
 	"runtime"
+	"sync"
 	"testing"
 )
 
@@ -83,4 +84,83 @@ func BenchmarkSetRoaring(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		s.Set(uint64(r.Int63n(sz)))
 	}
+}
+
+type uint64Heap []uint64
+
+func (u uint64Heap) Len() int            { return len(u) }
+func (u uint64Heap) Less(i, j int) bool  { return u[i] < u[j] }
+func (u uint64Heap) Swap(i, j int)       { u[i], u[j] = u[j], u[i] }
+func (u *uint64Heap) Push(x interface{}) { *u = append(*u, x.(uint64)) }
+func (u *uint64Heap) Pop() interface{} {
+	old := *u
+	n := len(old)
+	x := old[n-1]
+	*u = old[0 : n-1]
+	return x
+}
+
+func BenchmarkMerge11K(b *testing.B) {
+	var bitmaps []*Bitmap
+	for i := 0; i < 10000; i++ {
+		bm := NewBitmap()
+		for j := 0; j < 1000; j++ {
+			x := rand.Uint64() % 1e8 // 10M.
+			bm.Set(x)
+		}
+		bitmaps = append(bitmaps, bm)
+	}
+
+	second := func() *Bitmap {
+		var res []*Bitmap
+		for i := 0; i < 100; i += 1 {
+			input := bitmaps[100*i : 100*i+100]
+			out := FastOr(input...)
+			res = append(res, out)
+		}
+		return FastOr(res...)
+	}
+	third := func() *Bitmap {
+		var wg sync.WaitGroup
+		res := make([]*Bitmap, 100)
+		for i := 0; i < 100; i += 1 {
+			wg.Add(1)
+			go func(i int) {
+				input := bitmaps[100*i : 100*i+100]
+				res[i] = FastOr(input...)
+				wg.Done()
+			}(i)
+		}
+		wg.Wait()
+		return FastOr(res...)
+	}
+
+	out := FastOr(bitmaps...)
+	b.Logf("Out: %s\n", out)
+	out2 := second()
+	if out2.GetCardinality() != out.GetCardinality() {
+		panic("Don't match")
+	}
+	out3 := third()
+	if out3.GetCardinality() != out.GetCardinality() {
+		panic("Don't match")
+	}
+	b.Logf("card2: %d card3: %d", out2.GetCardinality(), out3.GetCardinality())
+
+	b.Run("fastor", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = FastOr(bitmaps...)
+		}
+	})
+
+	b.Run("fastor-groups", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = second()
+		}
+	})
+	b.Run("fastor-groups-conc", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = third()
+		}
+	})
 }

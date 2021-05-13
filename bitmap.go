@@ -435,7 +435,7 @@ func (ra *Bitmap) String() string {
 		card += int(c[indexCardinality])
 
 		b.WriteString(fmt.Sprintf(
-			"[%d] Key: %#x. Offset: %d. Size: %d. Type: %d. Card: %d. Uint16/Uid: %.2f\n",
+			"[%03d] Key: %#8x. Offset: %7d. Size: %4d. Type: %d. Card: %6d. Uint16/Uid: %.2f\n",
 			i, k, v, sz, c[indexType], c[indexCardinality],
 			float64(sz)/float64(c[indexCardinality])))
 	}
