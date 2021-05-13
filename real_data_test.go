@@ -124,7 +124,8 @@ func benchmarkRealDataAggregate(b *testing.B, aggregator func(b []*Bitmap) int) 
 				b.Fatal(err)
 			}
 			c := aggregator(bitmaps)
-			b.Logf("Got cardinality: %d\n", c)
+			_ = c
+			// b.Logf("Got cardinality: %d\n", c)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				aggregator(bitmaps)
@@ -178,10 +179,10 @@ func TestOrRealData(t *testing.T) {
 		res := FastOr(bitmaps...)
 		c := res.GetCardinality()
 
-		t.Logf("Cardinality: %d\n", c)
+		t.Logf("Result: %s\n", res)
 		require.Equal(t, len(valMap), c)
 
-		for k, _ := range valMap {
+		for k := range valMap {
 			require.True(t, res.Has(k))
 		}
 	}
