@@ -827,9 +827,38 @@ func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 	return b
 }
 
+// FastParOr would group up bitmaps and call FastOr on them concurrently. It
+// would then merge the groups into final Bitmap. This approach is simpler and
+// faster than operating at a container level, because we can't operate on array
+// containers belonging to the same Bitmap concurrently because array containers
+// can expand, leaving no clear boundaries.
+// If FastParOr is called with numGo=1, it just calls FastOr.
+func FastParOr(numGo int, bitmaps ...*Bitmap) *Bitmap {
+	if numGo == 1 {
+		return FastOr(bitmaps...)
+	}
+	width := max(len(bitmaps)/numGo, 3)
+
+	var wg sync.WaitGroup
+	var res []*Bitmap
+	for start := 0; start < len(bitmaps); start += width {
+		end := min(start+width, len(bitmaps))
+		res = append(res, nil) // Make space for result.
+		wg.Add(1)
+
+		go func(start, end int) {
+			idx := start / width
+			res[idx] = FastOr(bitmaps[start:end]...)
+			wg.Done()
+		}(start, end)
+	}
+	wg.Wait()
+	return FastOr(res...)
+}
+
 // FastOr would merge given Bitmaps into one Bitmap. This is faster than
 // doing an OR over the bitmaps iteratively.
-func FastOr(numGo int, bitmaps ...*Bitmap) *Bitmap {
+func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	// We first figure out the container distribution across the bitmaps. We do
 	// that by looking at the key of the container, and the cardinality. We
 	// assume the worst-case scenario where the union would result in a
@@ -855,9 +884,8 @@ func FastOr(numGo int, bitmaps ...*Bitmap) *Bitmap {
 	for key := range containers {
 		dst.setKey(key, 0)
 	}
-	// Then create the bitmap containers.
 
-	var bitmapKeys, arrayKeys []uint64
+	// Then create the bitmap containers.
 	for key, card := range containers {
 		if card >= 4096 {
 			offset := dst.newContainer(maxContainerSize)
@@ -865,14 +893,10 @@ func FastOr(numGo int, bitmaps ...*Bitmap) *Bitmap {
 			c[indexSize] = maxContainerSize
 			c[indexType] = typeBitmap
 			dst.setKey(key, offset)
-
-			// All the bitmap containers can be concurrently processed because
-			// they won't result in size changes. So, multiple goroutines can
-			// safely work within container boundaries.
-			bitmapKeys = append(bitmapKeys, key)
 		}
 	}
-	// Then create the array containers at the end. This allows them to expand
+
+	// Create the array containers at the end. This allows them to expand
 	// without having to move a lot of memory.
 	for key, card := range containers {
 		// Ensure this condition exactly maps up with above.
@@ -885,67 +909,12 @@ func FastOr(numGo int, bitmaps ...*Bitmap) *Bitmap {
 			c[indexSize] = uint16(card)
 			c[indexType] = typeArray
 			dst.setKey(key, offset)
-			arrayKeys = append(arrayKeys, key)
 		}
 	}
 
-	fmt.Printf("Num bitmap keys: %d. Num array keys: %d\n", len(bitmapKeys), len(arrayKeys))
-
-	process := func(keys []uint64, buf []uint16) {
-		for _, bkey := range keys {
-			// Find the container in dst.
-			offset, has := dst.keys.getValue(bkey)
-			assert(has)
-			dstCont := dst.getContainer(offset)
-
-			// Find the corresponding containers in src bitmaps.
-			for _, src := range bitmaps {
-				off, has := src.keys.getValue(bkey)
-				if !has {
-					continue
-				}
-				srcCont := src.getContainer(off)
-				if c := containerOr(dstCont, srcCont, buf, true); len(c) > 0 {
-					dst.copyAt(offset, c)
-					dst.setKey(bkey, offset)
-				}
-			}
-		}
+	// dst Bitmap is ready to be ORed with the given Bitmaps.
+	for _, b := range bitmaps {
+		dst.Or(b)
 	}
-
-	var wg sync.WaitGroup
-	if numGo <= 1 {
-		process(bitmapKeys, nil)
-
-	} else {
-		// Process bitmap keys concurrently. We use the main goroutine for
-		// array keys. So, substract one.
-		if len(arrayKeys) > 0 {
-			numGo--
-		}
-		width := len(bitmapKeys) / numGo
-		for numGo*width < len(bitmapKeys) {
-			width++
-		}
-		for start := 0; start < len(bitmapKeys); start += width {
-			end := min(start+width, len(bitmapKeys))
-			wg.Add(1)
-			go func(start, end int) {
-				process(bitmapKeys[start:end], nil)
-				wg.Done()
-			}(start, end)
-		}
-	}
-
-	// Process array keys serially.
-	buf := make([]uint16, maxContainerSize)
-	process(arrayKeys, buf)
-
-	wg.Wait()
-
-	// out Bitmap is ready to be ORed with the given Bitmaps.
-	// for _, bm := range bitmaps {
-	// 	dst.Or(bm)
-	// }
 	return dst
 }

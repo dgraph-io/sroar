@@ -19,7 +19,6 @@ package roar
 import (
 	"math/rand"
 	"runtime"
-	"sync"
 	"testing"
 )
 
@@ -115,49 +114,27 @@ func BenchmarkMerge11K(b *testing.B) {
 		var res []*Bitmap
 		for i := 0; i < 100; i += 1 {
 			input := bitmaps[100*i : 100*i+100]
-			out := FastOr(1, input...)
+			out := FastOr(input...)
 			res = append(res, out)
 		}
-		return FastOr(1, res...)
-	}
-	third := func() *Bitmap {
-		var wg sync.WaitGroup
-		res := make([]*Bitmap, 100)
-		for i := 0; i < 100; i += 1 {
-			wg.Add(1)
-			go func(i int) {
-				input := bitmaps[100*i : 100*i+100]
-				res[i] = FastOr(1, input...)
-				wg.Done()
-			}(i)
-		}
-		wg.Wait()
-		return FastOr(1, res...)
-	}
-	fourth := func() *Bitmap {
-		return FastOr(100, bitmaps...)
+		return FastOr(res...)
 	}
 
-	out := FastOr(1, bitmaps...)
+	out := FastOr(bitmaps...)
 	b.Logf("Out: %s\n", out)
 	out2 := second()
 	if out2.GetCardinality() != out.GetCardinality() {
 		panic("Don't match")
 	}
-	out3 := third()
+	out3 := FastParOr(8, bitmaps...)
 	if out3.GetCardinality() != out.GetCardinality() {
 		panic("Don't match")
 	}
-	out4 := fourth()
-	if out4.GetCardinality() != out.GetCardinality() {
-		panic("Don't match")
-	}
-	b.Logf("card2: %d card3: %d card4: %d", out2.GetCardinality(),
-		out3.GetCardinality(), out4.GetCardinality())
+	b.Logf("card2: %d card3: %d", out2.GetCardinality(), out3.GetCardinality())
 
 	b.Run("fastor", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = FastOr(1, bitmaps...)
+			_ = FastOr(bitmaps...)
 		}
 	})
 
@@ -166,14 +143,9 @@ func BenchmarkMerge11K(b *testing.B) {
 			_ = second()
 		}
 	})
-	b.Run("fastor-groups-conc", func(b *testing.B) {
+	b.Run("fastparor", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = third()
-		}
-	})
-	b.Run("fastor-conc", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			_ = fourth()
+			_ = FastParOr(4, bitmaps...)
 		}
 	})
 }

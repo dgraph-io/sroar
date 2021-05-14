@@ -118,7 +118,7 @@ func processZipFile(f *zip.File) ([]uint64, error) {
 
 func benchmarkRealDataAggregate(b *testing.B, aggregator func(b []*Bitmap) int) {
 	for _, dataset := range realDatasets {
-		once := true
+		once := false
 		b.Run(dataset, func(b *testing.B) {
 			bitmaps, err := retrieveRealDataBitmaps(dataset, true)
 			if err != nil {
@@ -139,7 +139,7 @@ func benchmarkRealDataAggregate(b *testing.B, aggregator func(b []*Bitmap) int) 
 
 func BenchmarkRealDataFastOr(b *testing.B) {
 	benchmarkRealDataAggregate(b, func(bitmaps []*Bitmap) int {
-		return FastOr(1, bitmaps...).GetCardinality()
+		return FastParOr(8, bitmaps...).GetCardinality()
 	})
 }
 
@@ -179,7 +179,7 @@ func TestOrRealData(t *testing.T) {
 		}
 
 		// Check that union operation is correct.
-		res := FastOr(1, bitmaps...)
+		res := FastOr(bitmaps...)
 		c := res.GetCardinality()
 
 		t.Logf("Result: %s\n", res)
