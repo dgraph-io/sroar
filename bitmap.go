@@ -21,6 +21,8 @@ import (
 	"math"
 	"strings"
 	"sync"
+
+	"github.com/pkg/errors"
 )
 
 var (
@@ -284,6 +286,28 @@ func (ra Bitmap) getContainer(offset uint64) []uint16 {
 	return data[:sz]
 }
 
+func (ra *Bitmap) ToBytes() []byte {
+	return toByteSlice(ra.data)
+}
+
+func (ra *Bitmap) Clone() *Bitmap {
+	rb := NewBitmap()
+	rb.data = make([]uint16, len(ra.data))
+	copy(rb.data, ra.data)
+	rb.keys = toUint64Slice(rb.data)
+	return rb
+}
+
+func (ra *Bitmap) UnmarshalBinary(b []byte) {
+	ra.data = toUint16Slice(b)
+	ra.keys = toUint64Slice(ra.data)
+}
+
+// TODO: Check if we can optimize this function.
+func (ra *Bitmap) IsEmpty() bool {
+	return ra.GetCardinality() == 0
+}
+
 func (ra *Bitmap) Set(x uint64) bool {
 	key := x & mask
 	offset, has := ra.keys.getValue(key)
@@ -312,7 +336,24 @@ func (ra *Bitmap) Set(x uint64) bool {
 	panic("we shouldn't reach here")
 }
 
-func (ra *Bitmap) Has(x uint64) bool {
+// TODO: Optimize this function
+func (ra Bitmap) SetMany(x []uint64) {
+	for _, k := range x {
+		ra.Set(k)
+	}
+}
+
+// TODO: Optimize this function
+// Select returns the xth integer in the bitmap. x=0 will return the smallest element.
+func (ra *Bitmap) Select(x uint64) (uint64, error) {
+	if x >= uint64(ra.GetCardinality()) {
+		return 0, errors.Errorf("can't find %dth integer in a bitmap with only %d items",
+			x, ra.GetCardinality())
+	}
+	return ra.ToArray()[x], nil
+}
+
+func (ra *Bitmap) Contains(x uint64) bool {
 	key := x & mask
 	offset, has := ra.keys.getValue(key)
 	if !has {

@@ -178,7 +178,7 @@ func TestOrRealData(t *testing.T) {
 			}
 			require.Equal(t, len(vals), b.GetCardinality())
 			for _, v := range vals {
-				require.True(t, b.Has(v))
+				require.True(t, b.Contains(v))
 			}
 			bitmaps[i] = b
 		}
@@ -191,7 +191,7 @@ func TestOrRealData(t *testing.T) {
 		require.Equal(t, len(valMap), c)
 
 		for k := range valMap {
-			require.True(t, res.Has(k))
+			require.True(t, res.Contains(k))
 		}
 	}
 
