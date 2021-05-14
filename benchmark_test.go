@@ -85,21 +85,7 @@ func BenchmarkSetRoaring(b *testing.B) {
 	}
 }
 
-type uint64Heap []uint64
-
-func (u uint64Heap) Len() int            { return len(u) }
-func (u uint64Heap) Less(i, j int) bool  { return u[i] < u[j] }
-func (u uint64Heap) Swap(i, j int)       { u[i], u[j] = u[j], u[i] }
-func (u *uint64Heap) Push(x interface{}) { *u = append(*u, x.(uint64)) }
-func (u *uint64Heap) Pop() interface{} {
-	old := *u
-	n := len(old)
-	x := old[n-1]
-	*u = old[0 : n-1]
-	return x
-}
-
-func BenchmarkMerge11K(b *testing.B) {
+func BenchmarkMerge10K(b *testing.B) {
 	var bitmaps []*Bitmap
 	for i := 0; i < 10000; i++ {
 		bm := NewBitmap()
