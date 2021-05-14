@@ -832,7 +832,11 @@ func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 // faster than operating at a container level, because we can't operate on array
 // containers belonging to the same Bitmap concurrently because array containers
 // can expand, leaving no clear boundaries.
+//
 // If FastParOr is called with numGo=1, it just calls FastOr.
+//
+// Experiments with numGo=4 shows that FastParOr would be 2x the speed of
+// FastOr, but 4x the memory usage, even under 50% CPU usage. So, use wisely.
 func FastParOr(numGo int, bitmaps ...*Bitmap) *Bitmap {
 	if numGo == 1 {
 		return FastOr(bitmaps...)

@@ -139,7 +139,12 @@ func benchmarkRealDataAggregate(b *testing.B, aggregator func(b []*Bitmap) int) 
 
 func BenchmarkRealDataFastOr(b *testing.B) {
 	benchmarkRealDataAggregate(b, func(bitmaps []*Bitmap) int {
-		return FastParOr(8, bitmaps...).GetCardinality()
+		return FastOr(bitmaps...).GetCardinality()
+	})
+}
+func BenchmarkRealDataFastParOr(b *testing.B) {
+	benchmarkRealDataAggregate(b, func(bitmaps []*Bitmap) int {
+		return FastParOr(4, bitmaps...).GetCardinality()
 	})
 }
 
