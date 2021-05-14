@@ -1,9 +1,9 @@
-module sroar
+module github.com/dgraph-io/sroar
 
 go 1.16
 
 require (
-	github.com/dgraph-io/ristretto v0.0.4-0.20210409083012-59dd4684ae74
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.7.0
 )
