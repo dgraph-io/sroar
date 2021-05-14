@@ -25,15 +25,14 @@ const (
 	// 2^16 will not fit in uint16.
 	startIdx uint16 = 4
 
-	minSizeOfContainer = 4 + 1 // 4 for header and 1 for one uint16. In Uint16.
+	minContainerSize = 64 // In Uint16.
 	// Bitmap container can contain 2^16 integers. Each integer would use one bit to represent.
 	// Given that our data is represented in []uint16s, that'd mean the size of container to store
 	// it would be divided by 16.
 	// 4 for header and 4096 for storing bitmap container. In Uint16.
-	maxSizeOfContainer = 4 + (1<<16)/16
+	maxContainerSize = 4 + (1<<16)/16
 )
 
-func setSize(data []uint16, sz uint16)   { data[0] = sz }
 func dataAt(data []uint16, i int) uint16 { return data[int(startIdx)+i] }
 
 func getCardinality(data []uint16) int {
@@ -138,12 +137,12 @@ func (c array) andArray(other array) []uint16 {
 	return out
 }
 
-func (c array) andNotArray(other array) []uint16 {
+func (c array) andNotArray(other array, buf []uint16) []uint16 {
 	var setOr []uint16
 	var setAnd []uint16
 
 	max := getCardinality(c) + getCardinality(other)
-	orRes := c.orArray(other)
+	orRes := c.orArray(other, buf)
 
 	// orArray can result in bitmap.
 	if orRes[indexType] == typeBitmap {
@@ -165,17 +164,18 @@ func (c array) andNotArray(other array) []uint16 {
 	return out
 }
 
-func (c array) orArray(other array) []uint16 {
+func (c array) orArray(other array, buf []uint16) []uint16 {
 	max := getCardinality(c) + getCardinality(other)
 	if max > 4096 {
 		// Use bitmap container.
-		out := c.toBitmapContainer()
+		out := c.toBitmapContainer(buf)
 		data := out[startIdx:]
 
 		num := getCardinality(out)
 		for _, x := range other.all() {
 			idx := x / 16
 			pos := x % 16
+			// We're doing the OnesCount twice to avoid branching.
 			before := bits.OnesCount16(data[idx])
 			data[idx] |= bitmapMask[pos]
 			after := bits.OnesCount16(data[idx])
@@ -188,7 +188,7 @@ func (c array) orArray(other array) []uint16 {
 	}
 
 	// The output would be of typeArray.
-	out := make([]uint16, int(startIdx)+max)
+	out := buf[:int(startIdx)+max]
 	num := union2by2(c.all(), other.all(), out[startIdx:])
 	out[indexType] = typeArray
 	out[indexSize] = uint16(len(out))
@@ -216,9 +216,11 @@ func (c array) andBitmap(other bitmap) []uint16 {
 }
 
 // TODO: Write an optmized version of this function.
-func (c array) andNotBitmap(other bitmap) []uint16 {
-	bm := c.toBitmapContainer()
-	return bitmap(bm).andNotBitmap(other)
+func (c array) andNotBitmap(other bitmap, buf []uint16) []uint16 {
+	// TODO: Iterate over the array and just check if the element is present in the bitmap.
+	// TODO: This won't work, because we're using buf wrong here.
+	bm := c.toBitmapContainer(nil)
+	return bitmap(bm).andNotBitmap(other, buf)
 }
 
 func (c array) isFull() bool {
@@ -247,10 +249,15 @@ func (c array) maximum() uint16 {
 	return c[int(startIdx)+N-1]
 }
 
-func (c array) toBitmapContainer() []uint16 {
-	buf := make([]uint16, maxSizeOfContainer)
+func (c array) toBitmapContainer(buf []uint16) []uint16 {
+	if len(buf) == 0 {
+		buf = make([]uint16, maxContainerSize)
+	} else {
+		assert(len(buf) == maxContainerSize)
+	}
+
 	b := bitmap(buf)
-	b[indexSize] = maxSizeOfContainer
+	b[indexSize] = maxContainerSize
 	b[indexType] = typeBitmap
 	setCardinality(b, getCardinality(c))
 
@@ -319,8 +326,8 @@ func (b bitmap) has(x uint16) bool {
 
 // TODO: This can perhaps be using SIMD instructions.
 func (b bitmap) andBitmap(other bitmap) []uint16 {
-	out := make([]uint16, maxSizeOfContainer)
-	out[indexSize] = maxSizeOfContainer
+	out := make([]uint16, maxContainerSize)
+	out[indexSize] = maxContainerSize
 	out[indexType] = typeBitmap
 	var num int
 	for i := 4; i < len(b); i++ {
@@ -331,54 +338,68 @@ func (b bitmap) andBitmap(other bitmap) []uint16 {
 	return out
 }
 
-func (b bitmap) orBitmap(other bitmap) []uint16 {
-	out := make([]uint16, maxSizeOfContainer)
-	copy(out, b) // Copy over first.
-	out[indexSize] = maxSizeOfContainer
-	out[indexType] = typeBitmap
+func (b bitmap) orBitmap(other bitmap, buf []uint16) []uint16 {
+	isInline := len(buf) == 0
+	if isInline {
+		buf = b
+	} else {
+		copy(buf, b) // Copy over first.
+	}
+	buf[indexSize] = maxContainerSize
+	buf[indexType] = typeBitmap
 
 	var num int
-	data := out[startIdx:]
+	data := buf[startIdx:]
 	for i, v := range other[startIdx:] {
 		data[i] |= v
 		num += bits.OnesCount16(data[i])
 	}
-	setCardinality(out, num)
-	return out
+	setCardinality(buf, num)
+	if isInline {
+		return nil
+	}
+	return buf
 }
 
-func (b bitmap) andNotBitmap(other bitmap) []uint16 {
-	out := make([]uint16, maxSizeOfContainer)
-	copy(out, b) // Copy over first.
-	out[indexSize] = maxSizeOfContainer
-	out[indexType] = typeBitmap
+func (b bitmap) andNotBitmap(other bitmap, buf []uint16) []uint16 {
+	copy(buf, b) // Copy over first.
+	buf[indexSize] = maxContainerSize
+	buf[indexType] = typeBitmap
 
 	var num int
-	data := out[startIdx:]
+	data := buf[startIdx:]
 	for i, v := range other[startIdx:] {
 		data[i] = (data[i] | v) ^ (data[i] & v)
 		num += bits.OnesCount16(data[i])
 	}
-	setCardinality(out, num)
-	return out
+	setCardinality(buf, num)
+	return buf
 }
 
-func (b bitmap) orArray(other array) []uint16 {
-	out := make([]uint16, maxSizeOfContainer)
-	copy(out, b)
+func (b bitmap) orArray(other array, buf []uint16) []uint16 {
+	isInline := len(buf) == 0
+	if isInline {
+		buf = b
+	} else {
+		copy(buf, b)
+	}
 
-	num := getCardinality(out)
+	num := getCardinality(buf)
 	for _, x := range other.all() {
 		idx := x / 16
 		pos := x % 16
 
-		before := bits.OnesCount16(out[4+idx])
-		out[4+idx] |= bitmapMask[pos]
-		after := bits.OnesCount16(out[4+idx])
+		val := &buf[4+idx]
+		before := bits.OnesCount16(*val)
+		*val |= bitmapMask[pos]
+		after := bits.OnesCount16(*val)
 		num += after - before
 	}
-	setCardinality(out, num)
-	return out
+	setCardinality(buf, num)
+	if isInline {
+		return nil
+	}
+	return buf
 }
 
 func (b bitmap) ToArray() []uint16 {

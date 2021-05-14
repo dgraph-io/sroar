@@ -38,6 +38,19 @@ func check2(_ interface{}, err error) {
 	check(err)
 }
 
+func min16(a, b uint16) uint16 {
+	if a < b {
+		return a
+	}
+	return b
+}
+func max16(a, b uint16) uint16 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func toByteSlice(b []uint16) []byte {
 	// reference: https://go101.org/article/unsafe.html
 	var bs []byte
@@ -60,15 +73,6 @@ func toUint16Slice(b []byte) (result []uint16) {
 	hdr.Cap = hdr.Len
 	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
 	return u16s
-}
-
-func toUint32Slice(b []uint16) (result []uint32) {
-	var u32s []uint32
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u32s))
-	hdr.Len = len(b) / 2
-	hdr.Cap = hdr.Len
-	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
-	return u32s
 }
 
 // BytesToU32Slice converts the given byte slice to uint32 slice
