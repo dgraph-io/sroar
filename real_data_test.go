@@ -139,7 +139,7 @@ func benchmarkRealDataAggregate(b *testing.B, aggregator func(b []*Bitmap) int) 
 
 func BenchmarkRealDataFastOr(b *testing.B) {
 	benchmarkRealDataAggregate(b, func(bitmaps []*Bitmap) int {
-		return FastOr(bitmaps...).GetCardinality()
+		return FastOr(1, bitmaps...).GetCardinality()
 	})
 }
 
@@ -179,7 +179,7 @@ func TestOrRealData(t *testing.T) {
 		}
 
 		// Check that union operation is correct.
-		res := FastOr(bitmaps...)
+		res := FastOr(1, bitmaps...)
 		c := res.GetCardinality()
 
 		t.Logf("Result: %s\n", res)

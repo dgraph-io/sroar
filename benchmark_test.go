@@ -115,10 +115,10 @@ func BenchmarkMerge11K(b *testing.B) {
 		var res []*Bitmap
 		for i := 0; i < 100; i += 1 {
 			input := bitmaps[100*i : 100*i+100]
-			out := FastOr(input...)
+			out := FastOr(1, input...)
 			res = append(res, out)
 		}
-		return FastOr(res...)
+		return FastOr(1, res...)
 	}
 	third := func() *Bitmap {
 		var wg sync.WaitGroup
@@ -127,15 +127,18 @@ func BenchmarkMerge11K(b *testing.B) {
 			wg.Add(1)
 			go func(i int) {
 				input := bitmaps[100*i : 100*i+100]
-				res[i] = FastOr(input...)
+				res[i] = FastOr(1, input...)
 				wg.Done()
 			}(i)
 		}
 		wg.Wait()
-		return FastOr(res...)
+		return FastOr(1, res...)
+	}
+	fourth := func() *Bitmap {
+		return FastOr(100, bitmaps...)
 	}
 
-	out := FastOr(bitmaps...)
+	out := FastOr(1, bitmaps...)
 	b.Logf("Out: %s\n", out)
 	out2 := second()
 	if out2.GetCardinality() != out.GetCardinality() {
@@ -145,11 +148,16 @@ func BenchmarkMerge11K(b *testing.B) {
 	if out3.GetCardinality() != out.GetCardinality() {
 		panic("Don't match")
 	}
-	b.Logf("card2: %d card3: %d", out2.GetCardinality(), out3.GetCardinality())
+	out4 := fourth()
+	if out4.GetCardinality() != out.GetCardinality() {
+		panic("Don't match")
+	}
+	b.Logf("card2: %d card3: %d card4: %d", out2.GetCardinality(),
+		out3.GetCardinality(), out4.GetCardinality())
 
 	b.Run("fastor", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_ = FastOr(bitmaps...)
+			_ = FastOr(1, bitmaps...)
 		}
 	})
 
@@ -161,6 +169,11 @@ func BenchmarkMerge11K(b *testing.B) {
 	b.Run("fastor-groups-conc", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			_ = third()
+		}
+	})
+	b.Run("fastor-conc", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = fourth()
 		}
 	})
 }

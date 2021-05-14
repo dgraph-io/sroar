@@ -38,6 +38,19 @@ func check2(_ interface{}, err error) {
 	check(err)
 }
 
+func min16(a, b uint16) uint16 {
+	if a < b {
+		return a
+	}
+	return b
+}
+func max16(a, b uint16) uint16 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func toByteSlice(b []uint16) []byte {
 	// reference: https://go101.org/article/unsafe.html
 	var bs []byte
