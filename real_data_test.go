@@ -118,14 +118,17 @@ func processZipFile(f *zip.File) ([]uint64, error) {
 
 func benchmarkRealDataAggregate(b *testing.B, aggregator func(b []*Bitmap) int) {
 	for _, dataset := range realDatasets {
+		once := false
 		b.Run(dataset, func(b *testing.B) {
 			bitmaps, err := retrieveRealDataBitmaps(dataset, true)
 			if err != nil {
 				b.Fatal(err)
 			}
-			c := aggregator(bitmaps)
-			_ = c
-			// b.Logf("Got cardinality: %d\n", c)
+			if once {
+				c := aggregator(bitmaps)
+				b.Logf("Dataset: %s Got cardinality: %d\n", dataset, c)
+				once = false
+			}
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				aggregator(bitmaps)
@@ -137,6 +140,11 @@ func benchmarkRealDataAggregate(b *testing.B, aggregator func(b []*Bitmap) int) 
 func BenchmarkRealDataFastOr(b *testing.B) {
 	benchmarkRealDataAggregate(b, func(bitmaps []*Bitmap) int {
 		return FastOr(bitmaps...).GetCardinality()
+	})
+}
+func BenchmarkRealDataFastParOr(b *testing.B) {
+	benchmarkRealDataAggregate(b, func(bitmaps []*Bitmap) int {
+		return FastParOr(4, bitmaps...).GetCardinality()
 	})
 }
 

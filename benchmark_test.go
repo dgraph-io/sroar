@@ -84,3 +84,54 @@ func BenchmarkSetRoaring(b *testing.B) {
 		s.Set(uint64(r.Int63n(sz)))
 	}
 }
+
+func BenchmarkMerge10K(b *testing.B) {
+	var bitmaps []*Bitmap
+	for i := 0; i < 10000; i++ {
+		bm := NewBitmap()
+		for j := 0; j < 1000; j++ {
+			x := rand.Uint64() % 1e8 // 10M.
+			bm.Set(x)
+		}
+		bitmaps = append(bitmaps, bm)
+	}
+
+	second := func() *Bitmap {
+		var res []*Bitmap
+		for i := 0; i < 100; i += 1 {
+			input := bitmaps[100*i : 100*i+100]
+			out := FastOr(input...)
+			res = append(res, out)
+		}
+		return FastOr(res...)
+	}
+
+	out := FastOr(bitmaps...)
+	b.Logf("Out: %s\n", out)
+	out2 := second()
+	if out2.GetCardinality() != out.GetCardinality() {
+		panic("Don't match")
+	}
+	out3 := FastParOr(8, bitmaps...)
+	if out3.GetCardinality() != out.GetCardinality() {
+		panic("Don't match")
+	}
+	b.Logf("card2: %d card3: %d", out2.GetCardinality(), out3.GetCardinality())
+
+	b.Run("fastor", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = FastOr(bitmaps...)
+		}
+	})
+
+	b.Run("fastor-groups", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = second()
+		}
+	})
+	b.Run("fastparor", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = FastParOr(4, bitmaps...)
+		}
+	})
+}

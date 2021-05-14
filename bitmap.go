@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 )
 
 var (
@@ -435,7 +436,7 @@ func (ra *Bitmap) String() string {
 		card += int(c[indexCardinality])
 
 		b.WriteString(fmt.Sprintf(
-			"[%d] Key: %#x. Offset: %d. Size: %d. Type: %d. Card: %d. Uint16/Uid: %.2f\n",
+			"[%03d] Key: %#8x. Offset: %7d. Size: %4d. Type: %d. Card: %6d. Uint16/Uid: %.2f\n",
 			i, k, v, sz, c[indexType], c[indexCardinality],
 			float64(sz)/float64(c[indexCardinality])))
 	}
@@ -826,6 +827,39 @@ func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 	return b
 }
 
+// FastParOr would group up bitmaps and call FastOr on them concurrently. It
+// would then merge the groups into final Bitmap. This approach is simpler and
+// faster than operating at a container level, because we can't operate on array
+// containers belonging to the same Bitmap concurrently because array containers
+// can expand, leaving no clear boundaries.
+//
+// If FastParOr is called with numGo=1, it just calls FastOr.
+//
+// Experiments with numGo=4 shows that FastParOr would be 2x the speed of
+// FastOr, but 4x the memory usage, even under 50% CPU usage. So, use wisely.
+func FastParOr(numGo int, bitmaps ...*Bitmap) *Bitmap {
+	if numGo == 1 {
+		return FastOr(bitmaps...)
+	}
+	width := max(len(bitmaps)/numGo, 3)
+
+	var wg sync.WaitGroup
+	var res []*Bitmap
+	for start := 0; start < len(bitmaps); start += width {
+		end := min(start+width, len(bitmaps))
+		res = append(res, nil) // Make space for result.
+		wg.Add(1)
+
+		go func(start, end int) {
+			idx := start / width
+			res[idx] = FastOr(bitmaps[start:end]...)
+			wg.Done()
+		}(start, end)
+	}
+	wg.Wait()
+	return FastOr(res...)
+}
+
 // FastOr would merge given Bitmaps into one Bitmap. This is faster than
 // doing an OR over the bitmaps iteratively.
 func FastOr(bitmaps ...*Bitmap) *Bitmap {
@@ -847,24 +881,26 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	// We use the above information to pre-generate the destination Bitmap and
 	// allocate container sizes based on the calculated cardinalities.
 	// var sz int
-	out := NewBitmap()
+	dst := NewBitmap()
 	// First create the keys. We do this as a separate step, because keys are
 	// the left most portion of the data array. Adding space there requires
 	// moving a lot of pieces.
 	for key := range containers {
-		out.setKey(key, 0)
+		dst.setKey(key, 0)
 	}
+
 	// Then create the bitmap containers.
 	for key, card := range containers {
 		if card >= 4096 {
-			offset := out.newContainer(maxContainerSize)
-			c := out.getContainer(offset)
+			offset := dst.newContainer(maxContainerSize)
+			c := dst.getContainer(offset)
 			c[indexSize] = maxContainerSize
 			c[indexType] = typeBitmap
-			out.setKey(key, offset)
+			dst.setKey(key, offset)
 		}
 	}
-	// Then create the array containers at the end. This allows them to expand
+
+	// Create the array containers at the end. This allows them to expand
 	// without having to move a lot of memory.
 	for key, card := range containers {
 		// Ensure this condition exactly maps up with above.
@@ -872,17 +908,17 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 			if card < minContainerSize {
 				card = minContainerSize
 			}
-			offset := out.newContainer(uint16(card))
-			c := out.getContainer(offset)
+			offset := dst.newContainer(uint16(card))
+			c := dst.getContainer(offset)
 			c[indexSize] = uint16(card)
 			c[indexType] = typeArray
-			out.setKey(key, offset)
+			dst.setKey(key, offset)
 		}
 	}
 
-	// out Bitmap is ready to be ORed with the given Bitmaps.
-	for _, bm := range bitmaps {
-		out.Or(bm)
+	// dst Bitmap is ready to be ORed with the given Bitmaps.
+	for _, b := range bitmaps {
+		dst.Or(b)
 	}
-	return out
+	return dst
 }

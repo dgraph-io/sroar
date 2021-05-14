@@ -13,6 +13,12 @@ func min(a, b int) int {
 	}
 	return b
 }
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
 
 func equal(a, b []uint16) bool {
 	if len(a) != len(b) {
