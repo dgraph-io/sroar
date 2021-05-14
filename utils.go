@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package roar
+package sroar
 
 import (
 	"log"
