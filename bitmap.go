@@ -299,11 +299,12 @@ func (ra *Bitmap) Clone() *Bitmap {
 }
 
 func (ra *Bitmap) UnmarshalBinary(b []byte) {
-	if len(b) == 0 {
+	if len(b) < 8 {
 		return
 	}
 	ra.data = toUint16Slice(b)
-	ra.keys = toUint64Slice(ra.data)
+	sz := toUint64Slice(ra.data[:4])[0]
+	ra.keys = toUint64Slice(ra.data[:sz])
 }
 
 // TODO: Check if we can optimize this function.
@@ -455,7 +456,6 @@ func (ra *Bitmap) ToArray() []uint64 {
 		switch c[indexType] {
 		case typeArray:
 			a := array(c)
-			fmt.Printf("Type is array, key is: %d\n", key)
 			for _, lo := range a.all() {
 				res = append(res, key|uint64(lo))
 			}

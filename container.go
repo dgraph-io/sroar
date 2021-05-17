@@ -448,7 +448,7 @@ func (b bitmap) maximum() uint16 {
 	if N == 0 {
 		return 0
 	}
-	for i := len(b); i >= int(startIdx); i-- {
+	for i := len(b) - 1; i >= int(startIdx); i-- {
 		x := b[i]
 		tz := bits.TrailingZeros16(x)
 		if tz == 16 {
