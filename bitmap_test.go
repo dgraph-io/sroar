@@ -466,10 +466,10 @@ func TestRemoveRange(t *testing.T) {
 	}
 	require.Equal(t, N, a.GetCardinality())
 	a.RemoveRange(uint64(N/4), uint64(N/2))
-	require.Equal(t, 3*N/4-1, a.GetCardinality())
+	require.Equal(t, 3*N/4, a.GetCardinality())
 
 	a.RemoveRange(0, uint64(N/2))
-	require.Equal(t, N/2-1, a.GetCardinality())
+	require.Equal(t, N/2, a.GetCardinality())
 
 	a.RemoveRange(uint64(N/2), uint64(N))
 	require.Equal(t, 0, a.GetCardinality())
@@ -477,4 +477,16 @@ func TestRemoveRange(t *testing.T) {
 	a.Set(uint64(N / 2))
 	a.Set(uint64(3 * N / 4))
 	require.Equal(t, 3, a.GetCardinality())
+}
+
+func TestSelect(t *testing.T) {
+	a := NewBitmap()
+	N := int(1e6)
+	for i := 0; i < N; i++ {
+		a.Set(uint64(i))
+	}
+
+	val, err := a.Select(uint64(N / 2))
+	require.NoError(t, err)
+	require.Equal(t, uint64(N/2), val)
 }

@@ -299,6 +299,9 @@ func (ra *Bitmap) Clone() *Bitmap {
 }
 
 func (ra *Bitmap) UnmarshalBinary(b []byte) {
+	if len(b) == 0 {
+		return
+	}
 	ra.data = toUint16Slice(b)
 	ra.keys = toUint64Slice(ra.data)
 }
@@ -392,31 +395,36 @@ func (ra *Bitmap) Remove(x uint64) bool {
 }
 
 // TODO: optimize this function. Also, introduce scootLeft probably.
+// Remove range removes [lo, hi) from the bitmap.
 func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	if lo > hi {
 		panic("lo should not be more than hi")
 	}
-	k1 := lo >> 16
-	k2 := hi >> 16
+	k1 := lo & mask
+	k2 := hi & mask
 
-	for k := k1 + 1; k < k2; k++ {
-		key := k << 16
-		_, has := ra.keys.getValue(key)
-		if has {
-			off := ra.newContainer(minContainerSize)
-			ra.setKey(key, off)
+	N := ra.keys.numKeys()
+	for i := 0; i < N; i++ {
+		k := ra.keys.key(i)
+		if k > k1 && k < k2 {
+			key := k & mask
+			_, has := ra.keys.getValue(key)
+			if has {
+				off := ra.newContainer(minContainerSize)
+				ra.setKey(key, off)
+			}
 		}
 	}
-	for x := lo; x <= hi; x++ {
-		k := x >> 16
+	for x := lo; x < hi; x++ {
+		k := x & mask
 		if k == k1 {
 			ra.Remove(x)
 		} else {
 			break
 		}
 	}
-	for x := hi; x >= lo; x-- {
-		k := x >> 16
+	for x := hi - 1; x >= lo; x-- {
+		k := x & mask
 		if k == k2 {
 			ra.Remove(x)
 		} else {
@@ -447,6 +455,7 @@ func (ra *Bitmap) ToArray() []uint64 {
 		switch c[indexType] {
 		case typeArray:
 			a := array(c)
+			fmt.Printf("Type is array, key is: %d\n", key)
 			for _, lo := range a.all() {
 				res = append(res, key|uint64(lo))
 			}
