@@ -433,12 +433,12 @@ func (ra *Bitmap) String() string {
 
 		sz := c[indexSize]
 		usedSize += int(sz)
-		card += int(c[indexCardinality])
+		card += getCardinality(c)
 
 		b.WriteString(fmt.Sprintf(
 			"[%03d] Key: %#8x. Offset: %7d. Size: %4d. Type: %d. Card: %6d. Uint16/Uid: %.2f\n",
-			i, k, v, sz, c[indexType], c[indexCardinality],
-			float64(sz)/float64(c[indexCardinality])))
+			i, k, v, sz, c[indexType], getCardinality(c),
+			float64(sz)/float64(getCardinality(c))))
 	}
 	b.WriteString(fmt.Sprintf("Number of containers: %d. Cardinality: %d\n",
 		ra.keys.numKeys(), card))
@@ -567,7 +567,12 @@ func containerAndNot(ac, bc, buf []uint16) []uint16 {
 	panic("containerAndNot: We should not reach here")
 }
 
-func containerOr(ac, bc, buf []uint16, inline bool) []uint16 {
+var (
+	runInline = 0x01
+	runLazy   = 0x02
+)
+
+func containerOr(ac, bc, buf []uint16, runMode int) []uint16 {
 	at := ac[indexType]
 	bt := bc[indexType]
 
@@ -582,26 +587,25 @@ func containerOr(ac, bc, buf []uint16, inline bool) []uint16 {
 		// TODO: If right doesn't have a lot of entries, we could just iterate
 		// over left and merge the entries from right inplace. Would be faster
 		// than copying over all entries into buffer. Worth trying that approach.
-		return left.orArray(right, buf)
+		return left.orArray(right, buf, runMode)
 	}
 	if at == typeArray && bt == typeBitmap {
 		left := array(ac)
 		right := bitmap(bc)
-		return right.orArray(left, buf)
+		// Don't run inline for this call.
+		return right.orArray(left, buf, runMode&^runInline)
 	}
-	if inline {
-		// These two following cases can be fully inlined.
-		buf = nil
-	}
+
+	// These two following cases can be fully inlined.
 	if at == typeBitmap && bt == typeArray {
 		left := bitmap(ac)
 		right := array(bc)
-		return left.orArray(right, buf)
+		return left.orArray(right, buf, runMode)
 	}
 	if at == typeBitmap && bt == typeBitmap {
 		left := bitmap(ac)
 		right := bitmap(bc)
-		return left.orBitmap(right, buf)
+		return left.orBitmap(right, buf, runMode)
 	}
 	panic("containerAnd: We should not reach here")
 }
@@ -735,7 +739,7 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 	}
 }
 
-func (dst *Bitmap) Or(src *Bitmap) {
+func (dst *Bitmap) Or(src *Bitmap, runMode int) {
 	srcIdx, numKeys := 0, src.keys.numKeys()
 
 	buf := make([]uint16, maxContainerSize)
@@ -753,7 +757,7 @@ func (dst *Bitmap) Or(src *Bitmap) {
 			// Container exists in dst as well. Do an inline containerOr.
 			offset := dst.keys.val(dstIdx)
 			dstCont := dst.getContainer(offset)
-			if c := containerOr(dstCont, srcCont, buf, true); len(c) > 0 {
+			if c := containerOr(dstCont, srcCont, buf, runMode|runInline); len(c) > 0 {
 				dst.copyAt(offset, c)
 				dst.setKey(key, offset)
 			}
@@ -777,7 +781,7 @@ func Or(a, b *Bitmap) *Bitmap {
 
 		if ak == bk {
 			// Do the union.
-			outc := containerOr(ac, bc, buf, false)
+			outc := containerOr(ac, bc, buf, 0)
 			offset := res.newContainer(uint16(len(outc)))
 			copy(res.data[offset:], outc)
 			res.setKey(ak, offset)
@@ -918,7 +922,16 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 
 	// dst Bitmap is ready to be ORed with the given Bitmaps.
 	for _, b := range bitmaps {
-		dst.Or(b)
+		dst.Or(b, runLazy)
 	}
+
+	for i := 0; i < dst.keys.numKeys(); i++ {
+		offset := dst.keys.val(i)
+		c := dst.getContainer(offset)
+		if getCardinality(c) == invalidCardinality {
+			calculateAndSetCardinality(c)
+		}
+	}
+
 	return dst
 }
