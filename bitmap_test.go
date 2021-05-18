@@ -458,12 +458,59 @@ func TestRemove(t *testing.T) {
 	require.Equal(t, 0, a.GetCardinality())
 }
 
+func TestContainerRemoveRange(t *testing.T) {
+	ra := NewBitmap()
+
+	type cases struct {
+		lo       uint16
+		hi       uint16
+		expected []uint16
+	}
+
+	test := func(tc cases) {
+		offset := ra.newContainer(maxContainerSize)
+		c := ra.getContainer(offset)
+		// c[indexType] = typeArray
+		// a := array(c)
+		c[indexType] = typeBitmap
+		a := bitmap(c)
+
+		// Test the bitmap container
+		for i := 1; i <= 5; i++ {
+			a.add(uint16(5 * i))
+		}
+		a.removeRange(tc.lo, tc.hi)
+		result := a.ToArray()
+		require.Equalf(t, len(tc.expected), getCardinality(a), "case: %+v, actual:%v\n", tc, result)
+		require.Equalf(t, tc.expected, result, "case: %+v actual: %v\n", tc, result)
+	}
+
+	tests := []cases{
+		{8, 22, []uint16{5, 25}},
+		{8, 20, []uint16{5, 25}},
+		{10, 22, []uint16{5, 25}},
+		{10, 20, []uint16{5, 25}},
+		{7, 11, []uint16{5, 15, 20, 25}},
+		{7, 10, []uint16{5, 15, 20, 25}},
+		{10, 11, []uint16{5, 15, 20, 25}},
+		{0, 0, []uint16{5, 10, 15, 20, 25}},
+		{30, 30, []uint16{5, 10, 15, 20, 25}},
+		{0, 30, []uint16{}},
+	}
+
+	for _, tc := range tests {
+		test(tc)
+	}
+}
+
 func TestRemoveRange(t *testing.T) {
 	a := NewBitmap()
 	N := int(1e7)
 	for i := 0; i < N; i++ {
 		a.Set(uint64(i))
 	}
+	b := a.Clone()
+
 	require.Equal(t, N, a.GetCardinality())
 	a.RemoveRange(uint64(N/4), uint64(N/2))
 	require.Equal(t, 3*N/4, a.GetCardinality())
@@ -477,6 +524,9 @@ func TestRemoveRange(t *testing.T) {
 	a.Set(uint64(N / 2))
 	a.Set(uint64(3 * N / 4))
 	require.Equal(t, 3, a.GetCardinality())
+
+	b.RemoveRange(0, 0)
+	require.Equal(t, N, b.GetCardinality())
 }
 
 func TestSelect(t *testing.T) {
@@ -501,61 +551,4 @@ func TestClone(t *testing.T) {
 	b := a.Clone()
 	require.Equal(t, a.GetCardinality(), b.GetCardinality())
 	require.Equal(t, a.ToArray(), b.ToArray())
-}
-
-func TestContainerRemoveRange(t *testing.T) {
-	ra := NewBitmap()
-	offset := ra.newContainer(maxContainerSize)
-	c := ra.getContainer(offset)
-	c[indexType] = typeBitmap
-
-	// Test the bitmap container
-	N := math.MaxUint16
-	b := bitmap(c)
-	for i := 0; i < N; i++ {
-		b.add(uint16(i))
-		require.True(t, b.has(uint16(i)))
-	}
-	b.removeBefore(uint16(1000))
-	for i := 0; i < N; i++ {
-		if i < 1000 {
-			require.False(t, b.has(uint16(i)))
-		} else {
-			require.True(t, b.has(uint16(i)))
-		}
-	}
-	require.Equal(t, N-1000, getCardinality(b))
-
-	b.removeAfter(uint16(2000))
-	for i := 0; i < N; i++ {
-		if i <= 2000 && i >= 1000 {
-			require.True(t, b.has(uint16(i)))
-		} else {
-			require.False(t, b.has(uint16(i)))
-		}
-	}
-	require.Equal(t, 1001, getCardinality(b))
-
-	// Test the array container
-	offset = ra.newContainer(maxContainerSize)
-	c = ra.getContainer(offset)
-	c[indexType] = typeArray
-	a := array(c)
-	for i := 0; i < 4000; i++ {
-		a.add(uint16(i))
-		require.True(t, a.has(uint16(i)))
-	}
-	a.removeBefore(uint16(1000))
-	require.Equal(t, 3000, getCardinality(a))
-
-	for i := 0; i < 4000; i++ {
-		if i < 1000 {
-			require.False(t, a.has(uint16(i)))
-		} else {
-			require.True(t, a.has(uint16(i)))
-		}
-	}
-
-	a.removeAfter(uint16(1000))
-	require.Equal(t, 1, getCardinality(a))
 }

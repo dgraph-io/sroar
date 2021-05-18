@@ -144,6 +144,47 @@ func (c array) removeAfter(x uint16) {
 
 }
 
+func (c array) removeRange(lo, hi uint16) {
+	loIdx := c.find(lo)
+	hiIdx := c.find(hi)
+	st := int(startIdx)
+
+	loVal := c[st+loIdx]
+	hiVal := c[st+hiIdx]
+
+	N := getCardinality(c)
+	fmt.Printf("loIdx: %d hiIdx: %d N: %d loVal: %d hiVal: %d\n", loIdx, hiIdx, N, loVal, hiVal)
+
+	// remove range doesn't intersect with any element in the array.
+	if hi < loVal || loIdx == N {
+		return
+	}
+
+	if hiVal == hi {
+		hiIdx++
+	}
+
+	if hiIdx == N {
+		if loIdx > 0 {
+			c = c[:int(startIdx)+loIdx-1]
+			setCardinality(c, loIdx)
+			return
+		}
+		c = c[:int(startIdx)+loIdx]
+		setCardinality(c, 0)
+		return
+	}
+
+	if loIdx == 0 {
+		copy(c[st:], c[st+hiIdx:])
+		setCardinality(c, N-hiIdx)
+		return
+	}
+
+	copy(c[st+loIdx:], c[st+hiIdx:])
+	setCardinality(c, N-hiIdx+loIdx)
+}
+
 // TODO: Figure out how memory allocation would work in these situations. Perhaps use allocator here?
 func (c array) andArray(other array) []uint16 {
 	min := min(getCardinality(c), getCardinality(other))
@@ -341,40 +382,47 @@ func (b bitmap) remove(x uint16) bool {
 	return false
 }
 
-func (b bitmap) removeBefore(x uint16) {
-	idx := x >> 4
-	pos := x & 0xF
+func (b bitmap) removeRange(lo, hi uint16) {
+	loIdx := lo >> 4
+	loPos := lo & 0xF
 
+	hiIdx := hi >> 4
+	hiPos := hi & 0xF
+
+	fmt.Printf("loIdx: %d, hiIdx: %d, loPos: %d, hiPos: %d\n", loIdx, hiIdx, loPos, hiPos)
 	N := getCardinality(b)
 	var removed int
-	for i := 0; i < int(idx); i++ {
-		removed += bits.OnesCount16(b[int(startIdx)+i])
-		b[int(startIdx)+i] = 0
-	}
-	for p := 0; p < int(pos); p++ {
-		if b[startIdx+idx]&bitmapMask[p] > 0 {
-			removed++
-		}
-		b[startIdx+idx] &= ^bitmapMask[p]
-	}
-	setCardinality(b, N-removed)
-}
-
-func (b bitmap) removeAfter(x uint16) {
-	idx := x >> 4
-	pos := x & 0xF
-
-	N := getCardinality(b)
-	var removed int
-	for i := idx + 1; i < 1<<12; i++ {
+	for i := loIdx + 1; i < hiIdx; i++ {
 		removed += bits.OnesCount16(b[startIdx+i])
 		b[startIdx+i] = 0
 	}
-	for p := pos + 1; p < 1<<4; p++ {
-		if b[startIdx+idx]&bitmapMask[p] > 0 {
+
+	if loIdx == hiIdx {
+		for p := loPos; p <= hiPos; p++ {
+			if b[startIdx+loIdx]&bitmapMask[p] > 0 {
+				fmt.Printf("p: %d\n", p)
+				removed++
+			}
+			b[startIdx+loIdx] &= ^bitmapMask[p]
+		}
+		setCardinality(b, N-removed)
+		return
+	}
+
+	for p := loPos; p < 1<<4; p++ {
+		if b[startIdx+loIdx]&bitmapMask[p] > 0 {
+			fmt.Printf("p: %d\n", p)
 			removed++
 		}
-		b[startIdx+idx] &= ^bitmapMask[p]
+		b[startIdx+loIdx] &= ^bitmapMask[p]
+	}
+
+	for p := uint16(0); p <= hiPos; p++ {
+		if b[startIdx+hiIdx]&bitmapMask[p] > 0 {
+			fmt.Printf("p: %d\n", p)
+			removed++
+		}
+		b[startIdx+hiIdx] &= ^bitmapMask[p]
 	}
 	setCardinality(b, N-removed)
 }

@@ -417,6 +417,23 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		}
 	}
 
+	//  complete range lie in a single container
+	if k1 == k2 {
+		off, has := ra.keys.getValue(k1)
+		if has {
+			c := ra.getContainer(off)
+			switch c[indexType] {
+			case typeArray:
+				p := array(c)
+				p.removeRange(uint16(lo), uint16(hi)-1)
+			case typeBitmap:
+				b := bitmap(c)
+				b.removeRange(uint16(lo), uint16(hi)-1)
+			}
+		}
+		return
+	}
+
 	// Remove elements >= lo
 	off, has := ra.keys.getValue(k1)
 	if has {
@@ -429,10 +446,10 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		switch c[indexType] {
 		case typeArray:
 			p := array(c)
-			p.removeAfter(uint16(lo) - 1)
+			p.removeRange(uint16(lo), math.MaxUint16)
 		case typeBitmap:
 			b := bitmap(c)
-			b.removeAfter(uint16(lo) - 1)
+			b.removeRange(uint16(lo), math.MaxUint16)
 		}
 	}
 
@@ -448,10 +465,10 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		switch c[indexType] {
 		case typeArray:
 			p := array(c)
-			p.removeBefore(uint16(hi))
+			p.removeRange(0, uint16(hi)-1)
 		case typeBitmap:
 			b := bitmap(c)
-			b.removeBefore(uint16(hi))
+			b.removeRange(0, uint16(hi)-1)
 		}
 	}
 
