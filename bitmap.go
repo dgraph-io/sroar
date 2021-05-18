@@ -294,7 +294,8 @@ func (ra *Bitmap) Clone() *Bitmap {
 	rb := NewBitmap()
 	rb.data = make([]uint16, len(ra.data))
 	copy(rb.data, ra.data)
-	rb.keys = toUint64Slice(rb.data)
+	sz := toUint64Slice(rb.data[:4])[0]
+	rb.keys = toUint64Slice(rb.data[:sz])
 	return rb
 }
 
@@ -406,9 +407,8 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 
 	N := ra.keys.numKeys()
 	for i := 0; i < N; i++ {
-		k := ra.keys.key(i)
-		if k > k1 && k < k2 {
-			key := k & mask
+		key := ra.keys.key(i)
+		if key > k1 && key < k2 {
 			_, has := ra.keys.getValue(key)
 			if has {
 				off := ra.newContainer(minContainerSize)
@@ -416,22 +416,61 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 			}
 		}
 	}
-	for x := lo; x < hi; x++ {
-		k := x & mask
-		if k == k1 {
-			ra.Remove(x)
-		} else {
-			break
+
+	// Remove elements >= lo
+	off, has := ra.keys.getValue(k1)
+	if has {
+		if uint16(lo) == 0 {
+			// We need to remove the full container
+			off := ra.newContainer(minContainerSize)
+			ra.setKey(k1, off)
+		}
+		c := ra.getContainer(off)
+		switch c[indexType] {
+		case typeArray:
+			p := array(c)
+			p.removeAfter(uint16(lo) - 1)
+		case typeBitmap:
+			b := bitmap(c)
+			b.removeAfter(uint16(lo) - 1)
 		}
 	}
-	for x := hi - 1; x >= lo; x-- {
-		k := x & mask
-		if k == k2 {
-			ra.Remove(x)
-		} else {
-			break
+
+	// Remove all elements < hi
+	off, has = ra.keys.getValue(k2)
+	if has {
+		if uint16(hi) == math.MaxUint16 {
+			// We need to remove the full container
+			off := ra.newContainer(minContainerSize)
+			ra.setKey(k2, off)
+		}
+		c := ra.getContainer(off)
+		switch c[indexType] {
+		case typeArray:
+			p := array(c)
+			p.removeBefore(uint16(hi))
+		case typeBitmap:
+			b := bitmap(c)
+			b.removeBefore(uint16(hi))
 		}
 	}
+
+	// for x := lo; x < hi; x++ {
+	// 	k := x & mask
+	// 	if k == k1 {
+	// 		ra.Remove(x)
+	// 	} else {
+	// 		break
+	// 	}
+	// }
+	// for x := hi - 1; x >= lo; x-- {
+	// 	k := x & mask
+	// 	if k == k2 {
+	// 		ra.Remove(x)
+	// 	} else {
+	// 		break
+	// 	}
+	// }
 }
 
 func (ra *Bitmap) GetCardinality() int {

@@ -119,6 +119,31 @@ func (c array) remove(x uint16) bool {
 	return false
 }
 
+func (c array) removeBefore(x uint16) {
+	idx := c.find(x)
+	N := getCardinality(c)
+
+	if int(idx) >= N {
+		c = c[:startIdx]
+		setCardinality(c, 0)
+		return
+	}
+	copy(c[:], c[idx:])
+	setCardinality(c, N-idx)
+}
+
+func (c array) removeAfter(x uint16) {
+	idx := c.find(x)
+	N := getCardinality(c)
+
+	if int(idx) >= N {
+		return
+	}
+	c = c[:int(startIdx)+idx+1]
+	setCardinality(c, idx+1)
+
+}
+
 // TODO: Figure out how memory allocation would work in these situations. Perhaps use allocator here?
 func (c array) andArray(other array) []uint16 {
 	min := min(getCardinality(c), getCardinality(other))
@@ -314,6 +339,44 @@ func (b bitmap) remove(x uint16) bool {
 		return true
 	}
 	return false
+}
+
+func (b bitmap) removeBefore(x uint16) {
+	idx := x >> 4
+	pos := x & 0xF
+
+	N := getCardinality(b)
+	var removed int
+	for i := 0; i < int(idx); i++ {
+		removed += bits.OnesCount16(b[int(startIdx)+i])
+		b[int(startIdx)+i] = 0
+	}
+	for p := 0; p < int(pos); p++ {
+		if b[startIdx+idx]&bitmapMask[p] > 0 {
+			removed++
+		}
+		b[startIdx+idx] &= ^bitmapMask[p]
+	}
+	setCardinality(b, N-removed)
+}
+
+func (b bitmap) removeAfter(x uint16) {
+	idx := x >> 4
+	pos := x & 0xF
+
+	N := getCardinality(b)
+	var removed int
+	for i := idx + 1; i < 1<<12; i++ {
+		removed += bits.OnesCount16(b[startIdx+i])
+		b[startIdx+i] = 0
+	}
+	for p := pos + 1; p < 1<<4; p++ {
+		if b[startIdx+idx]&bitmapMask[p] > 0 {
+			removed++
+		}
+		b[startIdx+idx] &= ^bitmapMask[p]
+	}
+	setCardinality(b, N-removed)
 }
 
 func (b bitmap) has(x uint16) bool {

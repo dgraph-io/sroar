@@ -490,3 +490,72 @@ func TestSelect(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(N/2), val)
 }
+
+func TestClone(t *testing.T) {
+	a := NewBitmap()
+	N := int(1e5)
+
+	for i := 0; i < N; i++ {
+		a.Set(uint64(rand.Int63n(math.MaxInt64)))
+	}
+	b := a.Clone()
+	require.Equal(t, a.GetCardinality(), b.GetCardinality())
+	require.Equal(t, a.ToArray(), b.ToArray())
+}
+
+func TestContainerRemoveRange(t *testing.T) {
+	ra := NewBitmap()
+	offset := ra.newContainer(maxContainerSize)
+	c := ra.getContainer(offset)
+	c[indexType] = typeBitmap
+
+	// Test the bitmap container
+	N := math.MaxUint16
+	b := bitmap(c)
+	for i := 0; i < N; i++ {
+		b.add(uint16(i))
+		require.True(t, b.has(uint16(i)))
+	}
+	b.removeBefore(uint16(1000))
+	for i := 0; i < N; i++ {
+		if i < 1000 {
+			require.False(t, b.has(uint16(i)))
+		} else {
+			require.True(t, b.has(uint16(i)))
+		}
+	}
+	require.Equal(t, N-1000, getCardinality(b))
+
+	b.removeAfter(uint16(2000))
+	for i := 0; i < N; i++ {
+		if i <= 2000 && i >= 1000 {
+			require.True(t, b.has(uint16(i)))
+		} else {
+			require.False(t, b.has(uint16(i)))
+		}
+	}
+	require.Equal(t, 1001, getCardinality(b))
+
+	// Test the array container
+	offset = ra.newContainer(maxContainerSize)
+	c = ra.getContainer(offset)
+	c[indexType] = typeArray
+	a := array(c)
+	for i := 0; i < 4000; i++ {
+		a.add(uint16(i))
+		require.True(t, a.has(uint16(i)))
+	}
+	a.removeBefore(uint16(1000))
+	require.Equal(t, 3000, getCardinality(a))
+
+	for i := 0; i < 4000; i++ {
+		if i < 1000 {
+			require.False(t, a.has(uint16(i)))
+		} else {
+			require.True(t, a.has(uint16(i)))
+		}
+	}
+
+	a.removeAfter(uint16(1000))
+	require.Equal(t, 1, getCardinality(a))
+}
