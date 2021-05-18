@@ -181,22 +181,12 @@ func (c array) orArray(other array, buf []uint16, runMode int) []uint16 {
 	max := getCardinality(c) + getCardinality(other)
 	if max > 4096 {
 		// Use bitmap container.
-		out := c.toBitmapContainer(buf)
-		data := out[startIdx:]
-
-		num := getCardinality(out)
-		for _, x := range other.all() {
-			idx := x / 16
-			pos := x % 16
-			// We're doing the OnesCount twice to avoid branching.
-			before := bits.OnesCount16(data[idx])
-			data[idx] |= bitmapMask[pos]
-			after := bits.OnesCount16(data[idx])
-			num += after - before
-		}
-		setCardinality(out, num)
+		out := bitmap(c.toBitmapContainer(buf))
 		// For now, just keep it as a bitmap. No need to change if the
 		// cardinality is smaller than 4096.
+		out.orArray(other, nil, runMode|runInline)
+		// Return out because out is pointing to buf. This would allow the
+		// receiver to copy out.
 		return out
 	}
 
