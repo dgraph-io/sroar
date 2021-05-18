@@ -20,6 +20,8 @@ import (
 	"math/rand"
 	"runtime"
 	"testing"
+
+	"github.com/RoaringBitmap/roaring/roaring64"
 )
 
 // go test -bench BenchmarkMemoryUsage -run -
@@ -134,4 +136,71 @@ func BenchmarkMerge10K(b *testing.B) {
 			_ = FastParOr(4, bitmaps...)
 		}
 	})
+}
+
+func BenchmarkRemoveRange(b *testing.B) {
+	bm := NewBitmap()
+	N := uint64(1 << 20)
+
+	bench := func(b *testing.B, factor uint64) {
+		for i := uint64(0); i < N; i++ {
+			bm.Set(uint64(i))
+		}
+		sz := uint64(N / factor)
+		cnt := uint64(N / sz)
+		b.ResetTimer()
+		for i := uint64(0); i < cnt; i++ {
+			bm.RemoveRange(i*sz, (i+1)*sz)
+		}
+	}
+
+	b.Run("N/2", func(b *testing.B) {
+		bench(b, 2)
+	})
+
+	b.Run("N/4", func(b *testing.B) {
+		bench(b, 4)
+	})
+
+	b.Run("N/8", func(b *testing.B) {
+		bench(b, 16)
+	})
+
+	b.Run("N/16", func(b *testing.B) {
+		bench(b, 256)
+	})
+}
+
+func BenchmarkRemoveRangeRoaring64(b *testing.B) {
+	bm := roaring64.NewBitmap()
+	N := uint64(1e6)
+
+	bench := func(b *testing.B, factor uint64) {
+		for i := uint64(0); i < N; i++ {
+			bm.Add(i)
+		}
+		sz := uint64(N / factor)
+		cnt := uint64(N / sz)
+		b.ResetTimer()
+		for i := uint64(0); i < cnt; i++ {
+			bm.RemoveRange(i*sz, (i+1)*sz)
+		}
+	}
+
+	b.Run("N/2", func(b *testing.B) {
+		bench(b, 2)
+	})
+
+	b.Run("N/4", func(b *testing.B) {
+		bench(b, 4)
+	})
+
+	b.Run("N/8", func(b *testing.B) {
+		bench(b, 16)
+	})
+
+	b.Run("N/16", func(b *testing.B) {
+		bench(b, 256)
+	})
+
 }
