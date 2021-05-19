@@ -4,21 +4,21 @@ package sroar
 // functionality wise complete. So that it can be imported to dgraph and checked for correctness.
 type Itr struct {
 	r       *Bitmap
-	index   uint64
+	index   int
 	reverse bool
 }
 
 func (r *Bitmap) Iterator() *Itr {
 	return &Itr{
 		r:     r,
-		index: 0,
+		index: -1,
 	}
 }
 
 func (r *Bitmap) ReverseIterator() *Itr {
 	return &Itr{
 		r:       r,
-		index:   0,
+		index:   r.GetCardinality(),
 		reverse: true,
 	}
 }
@@ -47,6 +47,9 @@ func (itr *Itr) Val() uint64 {
 
 // AdvanceIfNeeded advances until the value < minval.
 func (itr *Itr) AdvanceIfNeeded(minval uint64) {
+	if itr.index < 0 {
+		return
+	}
 	for itr.Val() < minval {
 		if itr.HasNext() {
 			itr.Next()

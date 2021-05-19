@@ -310,6 +310,9 @@ func (ra *Bitmap) UnmarshalBinary(b []byte) {
 
 // TODO: Check if we can optimize this function.
 func (ra *Bitmap) IsEmpty() bool {
+	if ra == nil {
+		return true
+	}
 	return ra.GetCardinality() == 0
 }
 
@@ -342,7 +345,7 @@ func (ra *Bitmap) Set(x uint64) bool {
 }
 
 // TODO: Optimize this function
-func (ra Bitmap) SetMany(x []uint64) {
+func (ra *Bitmap) SetMany(x []uint64) {
 	for _, k := range x {
 		ra.Set(k)
 	}
