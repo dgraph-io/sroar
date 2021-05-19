@@ -35,11 +35,6 @@ const (
 
 func dataAt(data []uint16, i int) uint16 { return data[int(startIdx)+i] }
 
-func getCardinality(data []uint16) int {
-	// This sum has to be done using two ints to avoid overflow.
-	return int(data[indexCardinality]) + int(data[indexCardinality+1])
-}
-
 func incrCardinality(data []uint16) {
 	cur := getCardinality(data)
 	if cur+1 > math.MaxUint16 {
@@ -49,14 +44,31 @@ func incrCardinality(data []uint16) {
 	}
 }
 
+var invalidCardinality int = math.MaxUint16 + 10
+var maxCardinality int = math.MaxUint16 + 1
+
+func getCardinality(data []uint16) int {
+	// This sum has to be done using two ints to avoid overflow.
+	return int(data[indexCardinality]) + int(data[indexCardinality+1])
+}
+
 func setCardinality(data []uint16, c int) {
 	if c > math.MaxUint16 {
 		data[indexCardinality] = math.MaxUint16
-		data[indexCardinality+1] = 1
+		data[indexCardinality+1] = uint16(c - math.MaxUint16)
 	} else {
 		data[indexCardinality] = uint16(c)
 		data[indexCardinality+1] = 0
 	}
+}
+
+func calculateAndSetCardinality(data []uint16) {
+	if data[indexType] != typeBitmap {
+		panic("Non-bitmap containers should always have cardinality set correctly")
+	}
+	b := bitmap(data)
+	card := b.cardinality()
+	setCardinality(b, card)
 }
 
 type array []uint16
@@ -142,7 +154,7 @@ func (c array) andNotArray(other array, buf []uint16) []uint16 {
 	var setAnd []uint16
 
 	max := getCardinality(c) + getCardinality(other)
-	orRes := c.orArray(other, buf)
+	orRes := c.orArray(other, buf, 0)
 
 	// orArray can result in bitmap.
 	if orRes[indexType] == typeBitmap {
@@ -164,26 +176,18 @@ func (c array) andNotArray(other array, buf []uint16) []uint16 {
 	return out
 }
 
-func (c array) orArray(other array, buf []uint16) []uint16 {
+func (c array) orArray(other array, buf []uint16, runMode int) []uint16 {
+	// We ignore runInline for this call.
+
 	max := getCardinality(c) + getCardinality(other)
 	if max > 4096 {
 		// Use bitmap container.
-		out := c.toBitmapContainer(buf)
-		data := out[startIdx:]
-
-		num := getCardinality(out)
-		for _, x := range other.all() {
-			idx := x / 16
-			pos := x % 16
-			// We're doing the OnesCount twice to avoid branching.
-			before := bits.OnesCount16(data[idx])
-			data[idx] |= bitmapMask[pos]
-			after := bits.OnesCount16(data[idx])
-			num += after - before
-		}
-		setCardinality(out, num)
+		out := bitmap(c.toBitmapContainer(buf))
 		// For now, just keep it as a bitmap. No need to change if the
 		// cardinality is smaller than 4096.
+		out.orArray(other, nil, runMode|runInline)
+		// Return out because out is pointing to buf. This would allow the
+		// receiver to copy out.
 		return out
 	}
 
@@ -254,6 +258,7 @@ func (c array) toBitmapContainer(buf []uint16) []uint16 {
 		buf = make([]uint16, maxContainerSize)
 	} else {
 		assert(len(buf) == maxContainerSize)
+		assert(len(buf) == copy(buf, empty))
 	}
 
 	b := bitmap(buf)
@@ -338,9 +343,8 @@ func (b bitmap) andBitmap(other bitmap) []uint16 {
 	return out
 }
 
-func (b bitmap) orBitmap(other bitmap, buf []uint16) []uint16 {
-	isInline := len(buf) == 0
-	if isInline {
+func (b bitmap) orBitmap(other bitmap, buf []uint16, runMode int) []uint16 {
+	if runMode&runInline > 0 {
 		buf = b
 	} else {
 		copy(buf, b) // Copy over first.
@@ -348,14 +352,28 @@ func (b bitmap) orBitmap(other bitmap, buf []uint16) []uint16 {
 	buf[indexSize] = maxContainerSize
 	buf[indexType] = typeBitmap
 
-	var num int
-	data := buf[startIdx:]
-	for i, v := range other[startIdx:] {
-		data[i] |= v
-		num += bits.OnesCount16(data[i])
+	if num := getCardinality(b); num == maxCardinality {
+		// do nothing. bitmap is already full.
+
+	} else if runMode&runLazy > 0 || num == invalidCardinality {
+		data := buf[startIdx:]
+		for i, v := range other[startIdx:] {
+			data[i] |= v
+		}
+		setCardinality(buf, invalidCardinality)
+
+	} else {
+		var num int
+		data := buf[startIdx:]
+		for i, v := range other[startIdx:] {
+			data[i] |= v
+			// We are going to iterate over the entire container. So, we can
+			// just recount the cardinality, starting from num=0.
+			num += bits.OnesCount16(data[i])
+		}
+		setCardinality(buf, num)
 	}
-	setCardinality(buf, num)
-	if isInline {
+	if runMode&runInline > 0 {
 		return nil
 	}
 	return buf
@@ -376,27 +394,42 @@ func (b bitmap) andNotBitmap(other bitmap, buf []uint16) []uint16 {
 	return buf
 }
 
-func (b bitmap) orArray(other array, buf []uint16) []uint16 {
-	isInline := len(buf) == 0
-	if isInline {
+func (b bitmap) orArray(other array, buf []uint16, runMode int) []uint16 {
+	if runMode&runInline > 0 {
 		buf = b
 	} else {
 		copy(buf, b)
 	}
 
-	num := getCardinality(buf)
-	for _, x := range other.all() {
-		idx := x / 16
-		pos := x % 16
+	if num := getCardinality(b); num == maxCardinality {
+		// do nothing. This bitmap is already full.
 
-		val := &buf[4+idx]
-		before := bits.OnesCount16(*val)
-		*val |= bitmapMask[pos]
-		after := bits.OnesCount16(*val)
-		num += after - before
+	} else if runMode&runLazy > 0 || num == invalidCardinality {
+		// Avoid calculating the cardinality to speed up operations.
+		for _, x := range other.all() {
+			idx := x / 16
+			pos := x % 16
+
+			buf[startIdx+idx] |= bitmapMask[pos]
+		}
+		setCardinality(buf, invalidCardinality)
+
+	} else {
+		num := getCardinality(buf)
+		for _, x := range other.all() {
+			idx := x / 16
+			pos := x % 16
+
+			val := &buf[4+idx]
+			before := bits.OnesCount16(*val)
+			*val |= bitmapMask[pos]
+			after := bits.OnesCount16(*val)
+			num += after - before
+		}
+		setCardinality(buf, num)
 	}
-	setCardinality(buf, num)
-	if isInline {
+
+	if runMode&runInline > 0 {
 		return nil
 	}
 	return buf
@@ -457,4 +490,112 @@ func (b bitmap) maximum() uint16 {
 		return uint16(16*i + 15 - tz)
 	}
 	panic("We shouldn't reach here")
+}
+
+func (b bitmap) cardinality() int {
+	var num int
+	for _, x := range b[startIdx:] {
+		num += bits.OnesCount16(x)
+	}
+	return num
+}
+
+var (
+	runInline = 0x01
+	runLazy   = 0x02
+)
+
+func containerOr(ac, bc, buf []uint16, runMode int) []uint16 {
+	at := ac[indexType]
+	bt := bc[indexType]
+
+	if at == typeArray && bt == typeArray {
+		left := array(ac)
+		right := array(bc)
+		// We can't always inline this function. If the right container has
+		// enough entries, trying to do a union with the left container inplace
+		// could end up overwriting the left container entries. So, we use a
+		// buffer to hold all output, and then copy it over to left.
+		//
+		// TODO: If right doesn't have a lot of entries, we could just iterate
+		// over left and merge the entries from right inplace. Would be faster
+		// than copying over all entries into buffer. Worth trying that approach.
+		return left.orArray(right, buf, runMode)
+	}
+	if at == typeArray && bt == typeBitmap {
+		left := array(ac)
+		right := bitmap(bc)
+		// Don't run inline for this call.
+		return right.orArray(left, buf, runMode&^runInline)
+	}
+
+	// These two following cases can be fully inlined.
+	if at == typeBitmap && bt == typeArray {
+		left := bitmap(ac)
+		right := array(bc)
+		return left.orArray(right, buf, runMode)
+	}
+	if at == typeBitmap && bt == typeBitmap {
+		left := bitmap(ac)
+		right := bitmap(bc)
+		return left.orBitmap(right, buf, runMode)
+	}
+	panic("containerAnd: We should not reach here")
+}
+
+func containerAnd(ac, bc []uint16) []uint16 {
+	at := ac[indexType]
+	bt := bc[indexType]
+
+	if at == typeArray && bt == typeArray {
+		left := array(ac)
+		right := array(bc)
+		return left.andArray(right)
+	}
+	if at == typeArray && bt == typeBitmap {
+		left := array(ac)
+		right := bitmap(bc)
+		return left.andBitmap(right)
+	}
+	if at == typeBitmap && bt == typeArray {
+		left := bitmap(ac)
+		right := array(bc)
+		out := right.andBitmap(left)
+		return out
+	}
+	if at == typeBitmap && bt == typeBitmap {
+		left := bitmap(ac)
+		right := bitmap(bc)
+		return left.andBitmap(right)
+	}
+	panic("containerAnd: We should not reach here")
+}
+
+// TODO: Optimize this function.
+func containerAndNot(ac, bc, buf []uint16) []uint16 {
+	at := ac[indexType]
+	bt := bc[indexType]
+
+	if at == typeArray && bt == typeArray {
+		left := array(ac)
+		right := array(bc)
+		return left.andNotArray(right, buf)
+	}
+	if at == typeArray && bt == typeBitmap {
+		left := array(ac)
+		right := bitmap(bc)
+		return left.andNotBitmap(right, buf)
+	}
+	if at == typeBitmap && bt == typeArray {
+		left := bitmap(ac)
+		right := array(bc)
+		out := right.andNotBitmap(left, buf)
+		return out
+	}
+	if at == typeBitmap && bt == typeBitmap {
+		left := bitmap(ac)
+		right := bitmap(bc)
+		return left.andNotBitmap(right, buf)
+	}
+	panic("containerAndNot: We should not reach here")
 }
