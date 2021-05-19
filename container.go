@@ -499,3 +499,103 @@ func (b bitmap) cardinality() int {
 	}
 	return num
 }
+
+var (
+	runInline = 0x01
+	runLazy   = 0x02
+)
+
+func containerOr(ac, bc, buf []uint16, runMode int) []uint16 {
+	at := ac[indexType]
+	bt := bc[indexType]
+
+	if at == typeArray && bt == typeArray {
+		left := array(ac)
+		right := array(bc)
+		// We can't always inline this function. If the right container has
+		// enough entries, trying to do a union with the left container inplace
+		// could end up overwriting the left container entries. So, we use a
+		// buffer to hold all output, and then copy it over to left.
+		//
+		// TODO: If right doesn't have a lot of entries, we could just iterate
+		// over left and merge the entries from right inplace. Would be faster
+		// than copying over all entries into buffer. Worth trying that approach.
+		return left.orArray(right, buf, runMode)
+	}
+	if at == typeArray && bt == typeBitmap {
+		left := array(ac)
+		right := bitmap(bc)
+		// Don't run inline for this call.
+		return right.orArray(left, buf, runMode&^runInline)
+	}
+
+	// These two following cases can be fully inlined.
+	if at == typeBitmap && bt == typeArray {
+		left := bitmap(ac)
+		right := array(bc)
+		return left.orArray(right, buf, runMode)
+	}
+	if at == typeBitmap && bt == typeBitmap {
+		left := bitmap(ac)
+		right := bitmap(bc)
+		return left.orBitmap(right, buf, runMode)
+	}
+	panic("containerAnd: We should not reach here")
+}
+
+func containerAnd(ac, bc []uint16) []uint16 {
+	at := ac[indexType]
+	bt := bc[indexType]
+
+	if at == typeArray && bt == typeArray {
+		left := array(ac)
+		right := array(bc)
+		return left.andArray(right)
+	}
+	if at == typeArray && bt == typeBitmap {
+		left := array(ac)
+		right := bitmap(bc)
+		return left.andBitmap(right)
+	}
+	if at == typeBitmap && bt == typeArray {
+		left := bitmap(ac)
+		right := array(bc)
+		out := right.andBitmap(left)
+		return out
+	}
+	if at == typeBitmap && bt == typeBitmap {
+		left := bitmap(ac)
+		right := bitmap(bc)
+		return left.andBitmap(right)
+	}
+	panic("containerAnd: We should not reach here")
+}
+
+// TODO: Optimize this function.
+func containerAndNot(ac, bc, buf []uint16) []uint16 {
+	at := ac[indexType]
+	bt := bc[indexType]
+
+	if at == typeArray && bt == typeArray {
+		left := array(ac)
+		right := array(bc)
+		return left.andNotArray(right, buf)
+	}
+	if at == typeArray && bt == typeBitmap {
+		left := array(ac)
+		right := bitmap(bc)
+		return left.andNotBitmap(right, buf)
+	}
+	if at == typeBitmap && bt == typeArray {
+		left := bitmap(ac)
+		right := array(bc)
+		out := right.andNotBitmap(left, buf)
+		return out
+	}
+	if at == typeBitmap && bt == typeBitmap {
+		left := bitmap(ac)
+		right := bitmap(bc)
+		return left.andNotBitmap(right, buf)
+	}
+	panic("containerAndNot: We should not reach here")
+}
