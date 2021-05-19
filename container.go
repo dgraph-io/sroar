@@ -45,6 +45,7 @@ func incrCardinality(data []uint16) {
 }
 
 var invalidCardinality int = math.MaxUint16 + 10
+var maxCardinality int = math.MaxUint16 + 1
 
 func getCardinality(data []uint16) int {
 	// This sum has to be done using two ints to avoid overflow.
@@ -351,12 +352,16 @@ func (b bitmap) orBitmap(other bitmap, buf []uint16, runMode int) []uint16 {
 	buf[indexSize] = maxContainerSize
 	buf[indexType] = typeBitmap
 
-	if runMode&runLazy > 0 {
+	if num := getCardinality(b); num == maxCardinality {
+		// do nothing. bitmap is already full.
+
+	} else if runMode&runLazy > 0 || num == invalidCardinality {
 		data := buf[startIdx:]
 		for i, v := range other[startIdx:] {
 			data[i] |= v
 		}
 		setCardinality(buf, invalidCardinality)
+
 	} else {
 		var num int
 		data := buf[startIdx:]
@@ -396,20 +401,21 @@ func (b bitmap) orArray(other array, buf []uint16, runMode int) []uint16 {
 		copy(buf, b)
 	}
 
-	if runMode&runLazy > 0 {
+	if num := getCardinality(b); num == maxCardinality {
+		// do nothing. This bitmap is already full.
+
+	} else if runMode&runLazy > 0 || num == invalidCardinality {
 		// Avoid calculating the cardinality to speed up operations.
 		for _, x := range other.all() {
 			idx := x / 16
 			pos := x % 16
 
-			val := &buf[startIdx+idx]
-			*val |= bitmapMask[pos]
+			buf[startIdx+idx] |= bitmapMask[pos]
 		}
 		setCardinality(buf, invalidCardinality)
 
 	} else {
 		num := getCardinality(buf)
-		calc := num != invalidCardinality
 		for _, x := range other.all() {
 			idx := x / 16
 			pos := x % 16
@@ -420,10 +426,9 @@ func (b bitmap) orArray(other array, buf []uint16, runMode int) []uint16 {
 			after := bits.OnesCount16(*val)
 			num += after - before
 		}
-		if calc {
-			setCardinality(buf, num)
-		}
+		setCardinality(buf, num)
 	}
+
 	if runMode&runInline > 0 {
 		return nil
 	}

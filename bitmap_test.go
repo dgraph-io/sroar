@@ -477,3 +477,28 @@ func TestRemoveRange(t *testing.T) {
 	a.Set(uint64(3 * N / 4))
 	require.Equal(t, 3, a.GetCardinality())
 }
+
+func TestContainerFull(t *testing.T) {
+	c := make([]uint16, maxContainerSize)
+	b := bitmap(c)
+	b[indexType] = typeBitmap
+	b[indexSize] = maxContainerSize
+	for i := 0; i < 1<<16; i++ {
+		b.add(uint16(i))
+	}
+	require.Equal(t, math.MaxUint16+1, getCardinality(b))
+
+	c2 := make([]uint16, maxContainerSize)
+	copy(c2, c)
+	b2 := bitmap(c2)
+
+	b.orBitmap(b2, nil, runInline)
+	require.Equal(t, math.MaxUint16+1, getCardinality(b))
+
+	setCardinality(b, invalidCardinality)
+	b.orBitmap(b2, nil, runInline)
+	require.Equal(t, invalidCardinality, getCardinality(b))
+
+	setCardinality(b, b.cardinality())
+	require.Equal(t, maxCardinality, getCardinality(b))
+}
