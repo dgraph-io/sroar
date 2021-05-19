@@ -333,7 +333,6 @@ func (ra *Bitmap) Set(x uint64) bool {
 			return false
 		}
 		if p.isFull() {
-			// Double the size of container for now.
 			ra.expandContainer(offset)
 		}
 		return true
