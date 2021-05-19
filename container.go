@@ -527,6 +527,28 @@ func (b bitmap) ToArray() []uint16 {
 	return res
 }
 
+func (b bitmap) selectAt(idx int) uint16 {
+	data := b[startIdx:]
+	n := uint16(len(data))
+	for i := uint16(0); i < n; i++ {
+		x := data[i]
+		c := bits.OnesCount16(x)
+		if idx < c {
+			for pos := uint16(0); pos < 16; pos++ {
+				if idx == 0 && x&bitmapMask[pos] > 0 {
+					return i*16 + pos
+				}
+				if x&bitmapMask[pos] > 0 {
+					idx--
+				}
+			}
+
+		}
+		idx -= c
+	}
+	panic("should not reach here")
+}
+
 // bitValue returns a 0 or a 1 depending upon whether x is present in the bitmap, where 1 means
 // present and 0 means absent.
 func (b bitmap) bitValue(x uint16) uint16 {

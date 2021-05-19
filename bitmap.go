@@ -367,7 +367,7 @@ func (ra *Bitmap) Select(x uint64) (uint64, error) {
 			case typeArray:
 				return key | uint64(array(con).all()[x]), nil
 			case typeBitmap:
-				return key | uint64(bitmap(con).ToArray()[x]), nil
+				return key | uint64(bitmap(con).selectAt(int(x))), nil
 			}
 		}
 		x -= c

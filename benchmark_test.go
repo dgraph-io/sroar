@@ -141,7 +141,6 @@ func BenchmarkMerge10K(b *testing.B) {
 func BenchmarkRemoveRange(b *testing.B) {
 	bm := NewBitmap()
 	N := uint64(1e5)
-
 	for i := uint64(0); i < N; i++ {
 		bm.Set(uint64(i))
 	}
@@ -167,19 +166,18 @@ func BenchmarkRemoveRange(b *testing.B) {
 		bench(b, 4)
 	})
 
-	b.Run("N/8", func(b *testing.B) {
-		bench(b, 8)
-	})
-
 	b.Run("N/16", func(b *testing.B) {
 		bench(b, 16)
+	})
+
+	b.Run("N/256", func(b *testing.B) {
+		bench(b, 256)
 	})
 }
 
 func BenchmarkRemoveRangeRoaring64(b *testing.B) {
 	bm := roaring64.NewBitmap()
 	N := uint64(1e5)
-
 	for i := uint64(0); i < N; i++ {
 		bm.Add(uint64(i))
 	}
@@ -205,12 +203,40 @@ func BenchmarkRemoveRangeRoaring64(b *testing.B) {
 		bench(b, 4)
 	})
 
-	b.Run("N/8", func(b *testing.B) {
-		bench(b, 8)
-	})
-
 	b.Run("N/16", func(b *testing.B) {
 		bench(b, 16)
 	})
 
+	b.Run("N/256", func(b *testing.B) {
+		bench(b, 256)
+	})
+
+}
+
+func BenchmarkSelectSroar(b *testing.B) {
+	bm := NewBitmap()
+	N := uint64(1e5)
+	for i := uint64(0); i < N; i++ {
+		bm.Set(uint64(i))
+	}
+
+	for i := 0; i < b.N; i++ {
+		for j := uint64(0); j < N; j++ {
+			bm.Select(j)
+		}
+	}
+}
+
+func BenchmarkSelectRoaring64(b *testing.B) {
+	bm := roaring64.NewBitmap()
+	N := uint64(1e5)
+	for i := uint64(0); i < N; i++ {
+		bm.Add(uint64(i))
+	}
+
+	for i := 0; i < b.N; i++ {
+		for j := uint64(0); j < N; j++ {
+			bm.Select(j)
+		}
+	}
 }
