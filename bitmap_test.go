@@ -543,14 +543,15 @@ func TestRemoveRange(t *testing.T) {
 
 func TestSelect(t *testing.T) {
 	a := NewBitmap()
-	N := int(1e6)
+	N := int(1e4)
 	for i := 0; i < N; i++ {
 		a.Set(uint64(i))
 	}
-
-	val, err := a.Select(uint64(N / 2))
-	require.NoError(t, err)
-	require.Equal(t, uint64(N/2), val)
+	for i := 0; i < N; i++ {
+		val, err := a.Select(uint64(i))
+		require.NoError(t, err)
+		require.Equal(t, uint64(i), val)
+	}
 }
 
 func TestClone(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 )
 
 func TestIterator(t *testing.T) {
-	testSz := []int{0, 1, 16, 2047, 2048, 10000}
+	testSz := []int{0, 1, 16, 2047, 2048, 1e4, 1e6}
 
 	var sz int
 	test := func(t *testing.T) {
@@ -27,6 +27,7 @@ func TestIterator(t *testing.T) {
 		require.Equal(t, uint64(sz), cnt)
 
 		rit := b.NewReverseIterator()
+
 		cnt = uint64(sz)
 		for rit.HasNext() {
 			cnt--
@@ -42,7 +43,7 @@ func TestIterator(t *testing.T) {
 	r := rand.New(rand.NewSource(0))
 	t.Run("test-random", func(t *testing.T) {
 		b := NewBitmap()
-		N := uint64(1e4)
+		N := uint64(1e5)
 		for i := uint64(0); i < N; i++ {
 			b.Set(uint64(r.Int63n(math.MaxInt64)))
 		}
@@ -58,11 +59,10 @@ func TestIterator(t *testing.T) {
 func BenchmarkIterator(b *testing.B) {
 	bm := NewBitmap()
 
-	N := int(1e4)
+	N := int(1e5)
 	for i := 0; i < N; i++ {
 		bm.Set(uint64(i))
 	}
-
 	it := bm.NewIterator()
 	for i := 0; i < b.N; i++ {
 		for it.HasNext() {

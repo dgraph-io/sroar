@@ -350,14 +350,29 @@ func (ra *Bitmap) SetMany(x []uint64) {
 	}
 }
 
-// TODO: Optimize this function
 // Select returns the xth integer in the bitmap. x=0 will return the smallest element.
 func (ra *Bitmap) Select(x uint64) (uint64, error) {
 	if x >= uint64(ra.GetCardinality()) {
 		return 0, errors.Errorf("can't find %dth integer in a bitmap with only %d items",
 			x, ra.GetCardinality())
 	}
-	return ra.ToArray()[x], nil
+	n := ra.keys.numKeys()
+	for i := 0; i < n; i++ {
+		key := ra.keys.key(i)
+		off := ra.keys.val(i)
+		con := ra.getContainer(off)
+		c := uint64(getCardinality(con))
+		if x < c {
+			switch con[indexType] {
+			case typeArray:
+				return key | uint64(array(con).all()[x]), nil
+			case typeBitmap:
+				return key | uint64(bitmap(con).ToArray()[x]), nil
+			}
+		}
+		x -= c
+	}
+	panic("should not reach here")
 }
 
 func (ra *Bitmap) Contains(x uint64) bool {
