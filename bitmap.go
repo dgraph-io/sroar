@@ -402,6 +402,11 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	if lo > hi {
 		panic("lo should not be more than hi")
 	}
+
+	if lo == hi {
+		return
+	}
+
 	k1 := lo & mask
 	k2 := hi & mask
 
@@ -434,7 +439,7 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		return
 	}
 
-	// Remove elements >= lo
+	// Remove elements >= lo in k1's container
 	off, has := ra.keys.getValue(k1)
 	if has {
 		if uint16(lo) == 0 {
@@ -453,7 +458,7 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		}
 	}
 
-	// Remove all elements < hi
+	// Remove all elements < hi in k2's container
 	off, has = ra.keys.getValue(k2)
 	if has {
 		if uint16(hi) == math.MaxUint16 {
@@ -471,23 +476,6 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 			b.removeRange(0, uint16(hi)-1)
 		}
 	}
-
-	// for x := lo; x < hi; x++ {
-	// 	k := x & mask
-	// 	if k == k1 {
-	// 		ra.Remove(x)
-	// 	} else {
-	// 		break
-	// 	}
-	// }
-	// for x := hi - 1; x >= lo; x-- {
-	// 	k := x & mask
-	// 	if k == k2 {
-	// 		ra.Remove(x)
-	// 	} else {
-	// 		break
-	// 	}
-	// }
 }
 
 func (ra *Bitmap) GetCardinality() int {

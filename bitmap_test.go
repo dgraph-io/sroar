@@ -467,20 +467,32 @@ func TestContainerRemoveRange(t *testing.T) {
 		expected []uint16
 	}
 
-	test := func(tc cases) {
+	testBitmap := func(tc cases) {
 		offset := ra.newContainer(maxContainerSize)
 		c := ra.getContainer(offset)
-		// c[indexType] = typeArray
-		// a := array(c)
 		c[indexType] = typeBitmap
 		a := bitmap(c)
 
-		// Test the bitmap container
 		for i := 1; i <= 5; i++ {
 			a.add(uint16(5 * i))
 		}
 		a.removeRange(tc.lo, tc.hi)
 		result := a.ToArray()
+		require.Equalf(t, len(tc.expected), getCardinality(a), "case: %+v, actual:%v\n", tc, result)
+		require.Equalf(t, tc.expected, result, "case: %+v actual: %v\n", tc, result)
+	}
+
+	testArray := func(tc cases) {
+		offset := ra.newContainer(maxContainerSize)
+		c := ra.getContainer(offset)
+		c[indexType] = typeArray
+		a := array(c)
+
+		for i := 1; i <= 5; i++ {
+			a.add(uint16(5 * i))
+		}
+		a.removeRange(tc.lo, tc.hi)
+		result := a.all()
 		require.Equalf(t, len(tc.expected), getCardinality(a), "case: %+v, actual:%v\n", tc, result)
 		require.Equalf(t, tc.expected, result, "case: %+v actual: %v\n", tc, result)
 	}
@@ -499,7 +511,8 @@ func TestContainerRemoveRange(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		test(tc)
+		testBitmap(tc)
+		testArray(tc)
 	}
 }
 
@@ -509,7 +522,8 @@ func TestRemoveRange(t *testing.T) {
 	for i := 0; i < N; i++ {
 		a.Set(uint64(i))
 	}
-	b := a.Clone()
+	a.RemoveRange(0, 0)
+	require.Equal(t, N, a.GetCardinality())
 
 	require.Equal(t, N, a.GetCardinality())
 	a.RemoveRange(uint64(N/4), uint64(N/2))
@@ -525,8 +539,6 @@ func TestRemoveRange(t *testing.T) {
 	a.Set(uint64(3 * N / 4))
 	require.Equal(t, 3, a.GetCardinality())
 
-	b.RemoveRange(0, 0)
-	require.Equal(t, N, b.GetCardinality())
 }
 
 func TestSelect(t *testing.T) {

@@ -145,6 +145,10 @@ func (c array) removeAfter(x uint16) {
 }
 
 func (c array) removeRange(lo, hi uint16) {
+	if hi < lo {
+		panic(fmt.Sprintf("[array removeRange] args must satisfy lo <= hi, got lo: %d, hi: %d\n",
+			lo, hi))
+	}
 	loIdx := c.find(lo)
 	hiIdx := c.find(hi)
 	st := int(startIdx)
@@ -153,7 +157,6 @@ func (c array) removeRange(lo, hi uint16) {
 	hiVal := c[st+hiIdx]
 
 	N := getCardinality(c)
-	fmt.Printf("loIdx: %d hiIdx: %d N: %d loVal: %d hiVal: %d\n", loIdx, hiIdx, N, loVal, hiVal)
 
 	// remove range doesn't intersect with any element in the array.
 	if hi < loVal || loIdx == N {
@@ -389,7 +392,6 @@ func (b bitmap) removeRange(lo, hi uint16) {
 	hiIdx := hi >> 4
 	hiPos := hi & 0xF
 
-	fmt.Printf("loIdx: %d, hiIdx: %d, loPos: %d, hiPos: %d\n", loIdx, hiIdx, loPos, hiPos)
 	N := getCardinality(b)
 	var removed int
 	for i := loIdx + 1; i < hiIdx; i++ {
@@ -400,7 +402,6 @@ func (b bitmap) removeRange(lo, hi uint16) {
 	if loIdx == hiIdx {
 		for p := loPos; p <= hiPos; p++ {
 			if b[startIdx+loIdx]&bitmapMask[p] > 0 {
-				fmt.Printf("p: %d\n", p)
 				removed++
 			}
 			b[startIdx+loIdx] &= ^bitmapMask[p]
@@ -411,7 +412,6 @@ func (b bitmap) removeRange(lo, hi uint16) {
 
 	for p := loPos; p < 1<<4; p++ {
 		if b[startIdx+loIdx]&bitmapMask[p] > 0 {
-			fmt.Printf("p: %d\n", p)
 			removed++
 		}
 		b[startIdx+loIdx] &= ^bitmapMask[p]
@@ -419,7 +419,6 @@ func (b bitmap) removeRange(lo, hi uint16) {
 
 	for p := uint16(0); p <= hiPos; p++ {
 		if b[startIdx+hiIdx]&bitmapMask[p] > 0 {
-			fmt.Printf("p: %d\n", p)
 			removed++
 		}
 		b[startIdx+hiIdx] &= ^bitmapMask[p]
@@ -514,7 +513,7 @@ func (b bitmap) orArray(other array, buf []uint16) []uint16 {
 }
 
 func (b bitmap) ToArray() []uint16 {
-	var res []uint16
+	res := []uint16{}
 	data := b[startIdx:]
 	for idx := uint16(0); idx < uint16(len(data)); idx++ {
 		x := data[idx]
