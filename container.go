@@ -1,3 +1,19 @@
+/*
+ * Copyright 2021 Dgraph Labs, Inc. and Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package sroar
 
 import (
@@ -136,11 +152,9 @@ func (c array) removeRange(lo, hi uint16) {
 	if hi < loVal || loIdx == N {
 		return
 	}
-
 	if hiVal == hi {
 		hiIdx++
 	}
-
 	if hiIdx == N {
 		if loIdx > 0 {
 			c = c[:int(startIdx)+loIdx-1]
@@ -150,13 +164,11 @@ func (c array) removeRange(lo, hi uint16) {
 		setCardinality(c, loIdx)
 		return
 	}
-
 	if loIdx == 0 {
 		copy(c[st:], c[st+hiIdx:])
 		setCardinality(c, N-hiIdx)
 		return
 	}
-
 	copy(c[st+loIdx:], c[st+hiIdx:])
 	setCardinality(c, N-hiIdx+loIdx)
 }
@@ -382,14 +394,12 @@ func (b bitmap) removeRange(lo, hi uint16) {
 		setCardinality(b, N-removed)
 		return
 	}
-
 	for p := loPos; p < 1<<4; p++ {
 		if b[startIdx+loIdx]&bitmapMask[p] > 0 {
 			removed++
 		}
 		b[startIdx+loIdx] &= ^bitmapMask[p]
 	}
-
 	for p := uint16(0); p <= hiPos; p++ {
 		if b[startIdx+hiIdx]&bitmapMask[p] > 0 {
 			removed++
@@ -500,6 +510,7 @@ func (b bitmap) all() []uint16 {
 	return res
 }
 
+//TODO: It can be optimized.
 func (b bitmap) selectAt(idx int) uint16 {
 	data := b[startIdx:]
 	n := uint16(len(data))

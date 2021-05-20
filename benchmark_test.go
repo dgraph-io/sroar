@@ -157,19 +157,15 @@ func BenchmarkRemoveRange(b *testing.B) {
 			}
 		}
 	}
-
 	b.Run("N/2", func(b *testing.B) {
 		bench(b, 2)
 	})
-
 	b.Run("N/4", func(b *testing.B) {
 		bench(b, 4)
 	})
-
 	b.Run("N/16", func(b *testing.B) {
 		bench(b, 16)
 	})
-
 	b.Run("N/256", func(b *testing.B) {
 		bench(b, 256)
 	})
@@ -194,23 +190,18 @@ func BenchmarkRemoveRangeRoaring64(b *testing.B) {
 			}
 		}
 	}
-
 	b.Run("N/2", func(b *testing.B) {
 		bench(b, 2)
 	})
-
 	b.Run("N/4", func(b *testing.B) {
 		bench(b, 4)
 	})
-
 	b.Run("N/16", func(b *testing.B) {
 		bench(b, 16)
 	})
-
 	b.Run("N/256", func(b *testing.B) {
 		bench(b, 256)
 	})
-
 }
 
 func BenchmarkSelectSroar(b *testing.B) {
