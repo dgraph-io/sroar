@@ -121,13 +121,12 @@ func (c array) remove(x uint16) bool {
 
 func (c array) removeRange(lo, hi uint16) {
 	if hi < lo {
-		panic(fmt.Sprintf("[array removeRange] args must satisfy lo <= hi, got lo: %d, hi: %d\n",
-			lo, hi))
+		panic(fmt.Sprintf("args must satisfy lo <= hi, got lo: %d, hi: %d\n", lo, hi))
 	}
 	loIdx := c.find(lo)
 	hiIdx := c.find(hi)
-	st := int(startIdx)
 
+	st := int(startIdx)
 	loVal := c[st+loIdx]
 	hiVal := c[st+hiIdx]
 
@@ -143,12 +142,7 @@ func (c array) removeRange(lo, hi uint16) {
 	}
 
 	if hiIdx == N {
-		if loIdx > 0 {
-			c = c[:int(startIdx)+loIdx-1]
-			setCardinality(c, loIdx)
-			return
-		}
-		c = c[:int(startIdx)+loIdx]
+		c = c[:int(startIdx)+loIdx-1]
 		setCardinality(c, 0)
 		return
 	}
@@ -190,7 +184,7 @@ func (c array) andNotArray(other array, buf []uint16) []uint16 {
 
 	// orArray can result in bitmap.
 	if orRes[indexType] == typeBitmap {
-		setOr = bitmap(orRes).ToArray()
+		setOr = bitmap(orRes).all()
 	} else {
 		setOr = array(orRes).all()
 	}
@@ -487,8 +481,8 @@ func (b bitmap) orArray(other array, buf []uint16) []uint16 {
 	return buf
 }
 
-func (b bitmap) ToArray() []uint16 {
-	res := []uint16{}
+func (b bitmap) all() []uint16 {
+	var res []uint16
 	data := b[startIdx:]
 	for idx := uint16(0); idx < uint16(len(data)); idx++ {
 		x := data[idx]

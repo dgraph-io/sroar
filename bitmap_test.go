@@ -477,7 +477,7 @@ func TestContainerRemoveRange(t *testing.T) {
 			a.add(uint16(5 * i))
 		}
 		a.removeRange(tc.lo, tc.hi)
-		result := a.ToArray()
+		result := a.all()
 		require.Equalf(t, len(tc.expected), getCardinality(a), "case: %+v, actual:%v\n", tc, result)
 		require.Equalf(t, tc.expected, result, "case: %+v actual: %v\n", tc, result)
 	}

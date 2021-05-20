@@ -87,7 +87,7 @@ func (r *Bitmap) NewIteratorOpt() *IteratorOpt {
 	case typeArray:
 		itr.arr = array(c).all()
 	case typeBitmap:
-		itr.arr = bitmap(c).ToArray()
+		itr.arr = bitmap(c).all()
 	}
 	return itr
 }
@@ -108,7 +108,7 @@ func (r *Bitmap) NewReverseIteratorOpt() *IteratorOpt {
 	case typeArray:
 		itr.arr = array(c).all()
 	case typeBitmap:
-		itr.arr = bitmap(c).ToArray()
+		itr.arr = bitmap(c).all()
 	}
 	itr.arrIdx = len(itr.arr)
 	return itr
@@ -144,7 +144,7 @@ func (itr *IteratorOpt) Next() uint64 {
 			case typeArray:
 				itr.arr = array(c).all()
 			case typeBitmap:
-				itr.arr = bitmap(c).ToArray()
+				itr.arr = bitmap(c).all()
 			}
 			itr.arrIdx = 0
 			// update arr
@@ -166,7 +166,7 @@ func (itr *IteratorOpt) Next() uint64 {
 			case typeArray:
 				itr.arr = array(c).all()
 			case typeBitmap:
-				itr.arr = bitmap(c).ToArray()
+				itr.arr = bitmap(c).all()
 			}
 			itr.arrIdx = len(itr.arr) - 1
 			// update arr

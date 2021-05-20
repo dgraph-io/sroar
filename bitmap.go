@@ -57,9 +57,14 @@ func FromBuffer(data []byte) *Bitmap {
 	}
 }
 
+func (ra *Bitmap) ToBuffer() []byte {
+	return toByteSlice(ra.data)
+}
+
 func NewBitmap() *Bitmap {
 	return NewBitmapWith(2)
 }
+
 func NewBitmapWith(numKeys int) *Bitmap {
 	if numKeys < 2 {
 		panic("Must contain at least two keys.")
@@ -286,10 +291,6 @@ func (ra Bitmap) getContainer(offset uint64) []uint16 {
 	return data[:sz]
 }
 
-func (ra *Bitmap) ToBytes() []byte {
-	return toByteSlice(ra.data)
-}
-
 func (ra *Bitmap) Clone() *Bitmap {
 	rb := NewBitmap()
 	rb.data = make([]uint16, len(ra.data))
@@ -308,7 +309,6 @@ func (ra *Bitmap) UnmarshalBinary(b []byte) {
 	ra.keys = toUint64Slice(ra.data[:sz])
 }
 
-// TODO: Check if we can optimize this function.
 func (ra *Bitmap) IsEmpty() bool {
 	if ra == nil {
 		return true
@@ -343,26 +343,26 @@ func (ra *Bitmap) Set(x uint64) bool {
 	panic("we shouldn't reach here")
 }
 
-// TODO: Optimize this function
+// TODO: Potentially this can be optimized.
 func (ra *Bitmap) SetMany(x []uint64) {
 	for _, k := range x {
 		ra.Set(k)
 	}
 }
 
-// Select returns the xth integer in the bitmap. x=0 will return the smallest element.
+// Select returns the element at the xth index. (0-indexed)
 func (ra *Bitmap) Select(x uint64) (uint64, error) {
 	if x >= uint64(ra.GetCardinality()) {
-		return 0, errors.Errorf("can't find %dth integer in a bitmap with only %d items",
+		return 0, errors.Errorf("index %d is not less than the cardinality: %d",
 			x, ra.GetCardinality())
 	}
 	n := ra.keys.numKeys()
 	for i := 0; i < n; i++ {
-		key := ra.keys.key(i)
 		off := ra.keys.val(i)
 		con := ra.getContainer(off)
 		c := uint64(getCardinality(con))
 		if x < c {
+			key := ra.keys.key(i)
 			switch con[indexType] {
 			case typeArray:
 				return key | uint64(array(con).all()[x]), nil
@@ -413,13 +413,11 @@ func (ra *Bitmap) Remove(x uint64) bool {
 	return true
 }
 
-// TODO: optimize this function. Also, introduce scootLeft probably.
 // Remove range removes [lo, hi) from the bitmap.
 func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	if lo > hi {
 		panic("lo should not be more than hi")
 	}
-
 	if lo == hi {
 		return
 	}
@@ -427,19 +425,7 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	k1 := lo & mask
 	k2 := hi & mask
 
-	N := ra.keys.numKeys()
-	for i := 0; i < N; i++ {
-		key := ra.keys.key(i)
-		if key > k1 && key < k2 {
-			_, has := ra.keys.getValue(key)
-			if has {
-				off := ra.newContainer(minContainerSize)
-				ra.setKey(key, off)
-			}
-		}
-	}
-
-	//  complete range lie in a single container
+	//  Complete range lie in a single container
 	if k1 == k2 {
 		off, has := ra.keys.getValue(k1)
 		if has {
@@ -456,11 +442,23 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		return
 	}
 
+	// Remove all the containers in range [k1+1, k2-1].
+	N := ra.keys.numKeys()
+	for i := 0; i < N; i++ {
+		key := ra.keys.key(i)
+		if key > k1 && key < k2 {
+			_, has := ra.keys.getValue(key)
+			if has {
+				off := ra.newContainer(minContainerSize)
+				ra.setKey(key, off)
+			}
+		}
+	}
+
 	// Remove elements >= lo in k1's container
 	off, has := ra.keys.getValue(k1)
 	if has {
 		if uint16(lo) == 0 {
-			// We need to remove the full container
 			off := ra.newContainer(minContainerSize)
 			ra.setKey(k1, off)
 		}
@@ -479,7 +477,6 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	off, has = ra.keys.getValue(k2)
 	if has {
 		if uint16(hi) == math.MaxUint16 {
-			// We need to remove the full container
 			off := ra.newContainer(minContainerSize)
 			ra.setKey(k2, off)
 		}
@@ -522,7 +519,7 @@ func (ra *Bitmap) ToArray() []uint64 {
 			}
 		case typeBitmap:
 			b := bitmap(c)
-			out := b.ToArray()
+			out := b.all()
 			for _, x := range out {
 				res = append(res, key|uint64(x))
 			}
