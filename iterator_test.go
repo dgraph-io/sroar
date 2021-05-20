@@ -116,6 +116,7 @@ func BenchmarkIterator(b *testing.B) {
 	for i := 0; i < N; i++ {
 		bm.Set(uint64(i))
 	}
+	b.ResetTimer()
 	it := bm.NewIterator()
 	for i := 0; i < b.N; i++ {
 		for it.HasNext() {
