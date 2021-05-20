@@ -119,31 +119,6 @@ func (c array) remove(x uint16) bool {
 	return false
 }
 
-func (c array) removeBefore(x uint16) {
-	idx := c.find(x)
-	N := getCardinality(c)
-
-	if int(idx) >= N {
-		c = c[:startIdx]
-		setCardinality(c, 0)
-		return
-	}
-	copy(c[:], c[idx:])
-	setCardinality(c, N-idx)
-}
-
-func (c array) removeAfter(x uint16) {
-	idx := c.find(x)
-	N := getCardinality(c)
-
-	if int(idx) >= N {
-		return
-	}
-	c = c[:int(startIdx)+idx+1]
-	setCardinality(c, idx+1)
-
-}
-
 func (c array) removeRange(lo, hi uint16) {
 	if hi < lo {
 		panic(fmt.Sprintf("[array removeRange] args must satisfy lo <= hi, got lo: %d, hi: %d\n",
