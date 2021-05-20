@@ -211,6 +211,7 @@ func BenchmarkSelectSroar(b *testing.B) {
 		bm.Set(uint64(i))
 	}
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for j := uint64(0); j < N; j++ {
 			bm.Select(j)
@@ -225,6 +226,7 @@ func BenchmarkSelectRoaring64(b *testing.B) {
 		bm.Add(uint64(i))
 	}
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for j := uint64(0); j < N; j++ {
 			bm.Select(j)
