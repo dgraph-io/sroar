@@ -72,6 +72,27 @@ func TestIteratorWithRemoveKeys(t *testing.T) {
 	require.Equal(t, 0, cnt)
 }
 
+func TestManyIterator(t *testing.T) {
+	b := NewBitmap()
+	for i := 0; i < int(1e6); i++ {
+		b.Set(uint64(i))
+	}
+
+	mi := b.ManyIterator()
+	buf := make([]uint64, 1000)
+
+	i := 0
+	for {
+		got := mi.NextMany(buf)
+		if got == 0 {
+			break
+		}
+		require.Equal(t, 1000, got)
+		require.Equal(t, uint64(i*1000), buf[0])
+		i++
+	}
+}
+
 func BenchmarkIterator(b *testing.B) {
 	bm := NewBitmap()
 
