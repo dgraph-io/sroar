@@ -507,7 +507,6 @@ func TestContainerRemoveRange(t *testing.T) {
 		{10, 11, []uint16{5, 15, 20, 25}},
 		{0, 0, []uint16{5, 10, 15, 20, 25}},
 		{30, 30, []uint16{5, 10, 15, 20, 25}},
-		{0, 30, []uint16{}},
 	}
 
 	for _, tc := range tests {

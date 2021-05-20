@@ -87,18 +87,3 @@ func BenchmarkIterator(b *testing.B) {
 		}
 	}
 }
-
-func BenchmarkIteratorOpt(b *testing.B) {
-	bm := NewBitmap()
-
-	N := int(1e5)
-	for i := 0; i < N; i++ {
-		bm.Set(uint64(i))
-	}
-	it := bm.NewIteratorOpt()
-	for i := 0; i < b.N; i++ {
-		for it.HasNext() {
-			it.Next()
-		}
-	}
-}

@@ -142,8 +142,12 @@ func (c array) removeRange(lo, hi uint16) {
 	}
 
 	if hiIdx == N {
-		c = c[:int(startIdx)+loIdx-1]
-		setCardinality(c, 0)
+		if loIdx > 0 {
+			c = c[:int(startIdx)+loIdx-1]
+		} else {
+			c = c[:int(startIdx)]
+		}
+		setCardinality(c, loIdx)
 		return
 	}
 

@@ -47,7 +47,7 @@ type Bitmap struct {
 
 func FromBuffer(data []byte) *Bitmap {
 	if len(data) < 8 {
-		return nil
+		return NewBitmap()
 	}
 	du := toUint16Slice(data)
 	x := toUint64Slice(du[:4])[0]
