@@ -27,7 +27,6 @@ func TestIteratorBasic(t *testing.T) {
 		require.Equal(t, uint64(sz), cnt)
 
 		rit := b.NewReverseIterator()
-
 		for rit.HasNext() {
 			cnt--
 			require.Equal(t, cnt, rit.Next())

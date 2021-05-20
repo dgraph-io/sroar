@@ -300,15 +300,6 @@ func (ra *Bitmap) Clone() *Bitmap {
 	return rb
 }
 
-func (ra *Bitmap) UnmarshalBinary(b []byte) {
-	if len(b) < 8 {
-		return
-	}
-	ra.data = toUint16Slice(b)
-	sz := toUint64Slice(ra.data[:4])[0]
-	ra.keys = toUint64Slice(ra.data[:sz])
-}
-
 func (ra *Bitmap) IsEmpty() bool {
 	if ra == nil {
 		return true
