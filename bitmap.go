@@ -350,6 +350,7 @@ func (ra *Bitmap) Select(x uint64) (uint64, error) {
 		off := ra.keys.val(i)
 		con := ra.getContainer(off)
 		c := uint64(getCardinality(con))
+		assert(c != uint64(invalidCardinality))
 		if x < c {
 			key := ra.keys.key(i)
 			switch con[indexType] {
@@ -432,15 +433,22 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	}
 
 	// Remove all the containers in range [k1+1, k2-1].
-	N := ra.keys.numKeys()
-	for i := 0; i < N; i++ {
+	n := ra.keys.numKeys()
+	st := ra.keys.search(k1)
+	key := ra.keys.key(st)
+	if key == k1 {
+		st++
+	}
+
+	for i := st; i < n; i++ {
 		key := ra.keys.key(i)
-		if key > k1 && key < k2 {
-			_, has := ra.keys.getValue(key)
-			if has {
-				off := ra.newContainer(minContainerSize)
-				ra.setKey(key, off)
-			}
+		if key >= k2 {
+			break
+		}
+		// TODO(Ahsan): We should probably scootLeft or zero out the container.
+		if _, has := ra.keys.getValue(key); has {
+			off := ra.newContainer(minContainerSize)
+			ra.setKey(key, off)
 		}
 	}
 
