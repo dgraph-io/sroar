@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-package roar
+package sroar
 
 import (
 	"fmt"
 	"math"
 	"strings"
 	"sync"
+
+	"github.com/pkg/errors"
 )
 
 var (
@@ -45,7 +47,7 @@ type Bitmap struct {
 
 func FromBuffer(data []byte) *Bitmap {
 	if len(data) < 8 {
-		return nil
+		return NewBitmap()
 	}
 	du := toUint16Slice(data)
 	x := toUint64Slice(du[:4])[0]
@@ -55,9 +57,14 @@ func FromBuffer(data []byte) *Bitmap {
 	}
 }
 
+func (ra *Bitmap) ToBuffer() []byte {
+	return toByteSlice(ra.data)
+}
+
 func NewBitmap() *Bitmap {
 	return NewBitmapWith(2)
 }
+
 func NewBitmapWith(numKeys int) *Bitmap {
 	if numKeys < 2 {
 		panic("Must contain at least two keys.")
@@ -284,6 +291,20 @@ func (ra Bitmap) getContainer(offset uint64) []uint16 {
 	return data[:sz]
 }
 
+func (ra *Bitmap) Clone() *Bitmap {
+	abuf := ra.ToBuffer()
+	bbuf := make([]byte, len(abuf))
+	copy(bbuf, abuf)
+	return FromBuffer(bbuf)
+}
+
+func (ra *Bitmap) IsEmpty() bool {
+	if ra == nil {
+		return true
+	}
+	return ra.GetCardinality() == 0
+}
+
 func (ra *Bitmap) Set(x uint64) bool {
 	key := x & mask
 	offset, has := ra.keys.getValue(key)
@@ -301,7 +322,6 @@ func (ra *Bitmap) Set(x uint64) bool {
 			return false
 		}
 		if p.isFull() {
-			// Double the size of container for now.
 			ra.expandContainer(offset)
 		}
 		return true
@@ -312,7 +332,40 @@ func (ra *Bitmap) Set(x uint64) bool {
 	panic("we shouldn't reach here")
 }
 
-func (ra *Bitmap) Has(x uint64) bool {
+// TODO: Potentially this can be optimized.
+func (ra *Bitmap) SetMany(x []uint64) {
+	for _, k := range x {
+		ra.Set(k)
+	}
+}
+
+// Select returns the element at the xth index. (0-indexed)
+func (ra *Bitmap) Select(x uint64) (uint64, error) {
+	if x >= uint64(ra.GetCardinality()) {
+		return 0, errors.Errorf("index %d is not less than the cardinality: %d",
+			x, ra.GetCardinality())
+	}
+	n := ra.keys.numKeys()
+	for i := 0; i < n; i++ {
+		off := ra.keys.val(i)
+		con := ra.getContainer(off)
+		c := uint64(getCardinality(con))
+		assert(c != uint64(invalidCardinality))
+		if x < c {
+			key := ra.keys.key(i)
+			switch con[indexType] {
+			case typeArray:
+				return key | uint64(array(con).all()[x]), nil
+			case typeBitmap:
+				return key | uint64(bitmap(con).selectAt(int(x))), nil
+			}
+		}
+		x -= c
+	}
+	panic("should not reach here")
+}
+
+func (ra *Bitmap) Contains(x uint64) bool {
 	key := x & mask
 	offset, has := ra.keys.getValue(key)
 	if !has {
@@ -350,36 +403,88 @@ func (ra *Bitmap) Remove(x uint64) bool {
 	return true
 }
 
-// TODO: optimize this function. Also, introduce scootLeft probably.
+// Remove range removes [lo, hi) from the bitmap.
 func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	if lo > hi {
 		panic("lo should not be more than hi")
 	}
-	k1 := lo >> 16
-	k2 := hi >> 16
+	if lo == hi {
+		return
+	}
 
-	for k := k1 + 1; k < k2; k++ {
-		key := k << 16
-		_, has := ra.keys.getValue(key)
+	k1 := lo & mask
+	k2 := hi & mask
+
+	//  Complete range lie in a single container
+	if k1 == k2 {
+		off, has := ra.keys.getValue(k1)
 		if has {
+			c := ra.getContainer(off)
+			switch c[indexType] {
+			case typeArray:
+				p := array(c)
+				p.removeRange(uint16(lo), uint16(hi)-1)
+			case typeBitmap:
+				b := bitmap(c)
+				b.removeRange(uint16(lo), uint16(hi)-1)
+			}
+		}
+		return
+	}
+
+	// Remove all the containers in range [k1+1, k2-1].
+	n := ra.keys.numKeys()
+	st := ra.keys.search(k1)
+	key := ra.keys.key(st)
+	if key == k1 {
+		st++
+	}
+
+	for i := st; i < n; i++ {
+		key := ra.keys.key(i)
+		if key >= k2 {
+			break
+		}
+		// TODO(Ahsan): We should probably scootLeft or zero out the container.
+		if _, has := ra.keys.getValue(key); has {
 			off := ra.newContainer(minContainerSize)
 			ra.setKey(key, off)
 		}
 	}
-	for x := lo; x <= hi; x++ {
-		k := x >> 16
-		if k == k1 {
-			ra.Remove(x)
-		} else {
-			break
+
+	// Remove elements >= lo in k1's container
+	off, has := ra.keys.getValue(k1)
+	if has {
+		if uint16(lo) == 0 {
+			off := ra.newContainer(minContainerSize)
+			ra.setKey(k1, off)
+		}
+		c := ra.getContainer(off)
+		switch c[indexType] {
+		case typeArray:
+			p := array(c)
+			p.removeRange(uint16(lo), math.MaxUint16)
+		case typeBitmap:
+			b := bitmap(c)
+			b.removeRange(uint16(lo), math.MaxUint16)
 		}
 	}
-	for x := hi; x >= lo; x-- {
-		k := x >> 16
-		if k == k2 {
-			ra.Remove(x)
-		} else {
-			break
+
+	// Remove all elements < hi in k2's container
+	off, has = ra.keys.getValue(k2)
+	if has {
+		if uint16(hi) == math.MaxUint16 {
+			off := ra.newContainer(minContainerSize)
+			ra.setKey(k2, off)
+		}
+		c := ra.getContainer(off)
+		switch c[indexType] {
+		case typeArray:
+			p := array(c)
+			p.removeRange(0, uint16(hi)-1)
+		case typeBitmap:
+			b := bitmap(c)
+			b.removeRange(0, uint16(hi)-1)
 		}
 	}
 }
@@ -411,7 +516,7 @@ func (ra *Bitmap) ToArray() []uint64 {
 			}
 		case typeBitmap:
 			b := bitmap(c)
-			out := b.ToArray()
+			out := b.all()
 			for _, x := range out {
 				res = append(res, key|uint64(x))
 			}

@@ -1,4 +1,20 @@
-package roar
+/*
+ * Copyright 2021 Dgraph Labs, Inc. and Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package sroar
 
 import (
 	"fmt"
@@ -131,6 +147,44 @@ func (c array) remove(x uint16) bool {
 	return false
 }
 
+func (c array) removeRange(lo, hi uint16) {
+	if hi < lo {
+		panic(fmt.Sprintf("args must satisfy lo <= hi, got lo: %d, hi: %d\n", lo, hi))
+	}
+	loIdx := c.find(lo)
+	hiIdx := c.find(hi)
+
+	st := int(startIdx)
+	loVal := c[st+loIdx]
+	hiVal := c[st+hiIdx]
+
+	N := getCardinality(c)
+
+	// remove range doesn't intersect with any element in the array.
+	if hi < loVal || loIdx == N {
+		return
+	}
+	if hiVal == hi {
+		hiIdx++
+	}
+	if hiIdx == N {
+		if loIdx > 0 {
+			c = c[:int(startIdx)+loIdx-1]
+		} else {
+			c = c[:int(startIdx)]
+		}
+		setCardinality(c, loIdx)
+		return
+	}
+	if loIdx == 0 {
+		copy(c[st:], c[st+hiIdx:])
+		setCardinality(c, N-hiIdx)
+		return
+	}
+	copy(c[st+loIdx:], c[st+hiIdx:])
+	setCardinality(c, N-hiIdx+loIdx)
+}
+
 // TODO: Figure out how memory allocation would work in these situations. Perhaps use allocator here?
 func (c array) andArray(other array) []uint16 {
 	min := min(getCardinality(c), getCardinality(other))
@@ -158,7 +212,7 @@ func (c array) andNotArray(other array, buf []uint16) []uint16 {
 
 	// orArray can result in bitmap.
 	if orRes[indexType] == typeBitmap {
-		setOr = bitmap(orRes).ToArray()
+		setOr = bitmap(orRes).all()
 	} else {
 		setOr = array(orRes).all()
 	}
@@ -321,6 +375,45 @@ func (b bitmap) remove(x uint16) bool {
 	return false
 }
 
+func (b bitmap) removeRange(lo, hi uint16) {
+	loIdx := lo >> 4
+	loPos := lo & 0xF
+
+	hiIdx := hi >> 4
+	hiPos := hi & 0xF
+
+	N := getCardinality(b)
+	var removed int
+	for i := loIdx + 1; i < hiIdx; i++ {
+		removed += bits.OnesCount16(b[startIdx+i])
+		b[startIdx+i] = 0
+	}
+
+	if loIdx == hiIdx {
+		for p := loPos; p <= hiPos; p++ {
+			if b[startIdx+loIdx]&bitmapMask[p] > 0 {
+				removed++
+			}
+			b[startIdx+loIdx] &= ^bitmapMask[p]
+		}
+		setCardinality(b, N-removed)
+		return
+	}
+	for p := loPos; p < 1<<4; p++ {
+		if b[startIdx+loIdx]&bitmapMask[p] > 0 {
+			removed++
+		}
+		b[startIdx+loIdx] &= ^bitmapMask[p]
+	}
+	for p := uint16(0); p <= hiPos; p++ {
+		if b[startIdx+hiIdx]&bitmapMask[p] > 0 {
+			removed++
+		}
+		b[startIdx+hiIdx] &= ^bitmapMask[p]
+	}
+	setCardinality(b, N-removed)
+}
+
 func (b bitmap) has(x uint16) bool {
 	idx := x >> 4
 	pos := x & 0xF
@@ -435,7 +528,7 @@ func (b bitmap) orArray(other array, buf []uint16, runMode int) []uint16 {
 	return buf
 }
 
-func (b bitmap) ToArray() []uint16 {
+func (b bitmap) all() []uint16 {
 	var res []uint16
 	data := b[startIdx:]
 	for idx := uint16(0); idx < uint16(len(data)); idx++ {
@@ -448,6 +541,29 @@ func (b bitmap) ToArray() []uint16 {
 		}
 	}
 	return res
+}
+
+//TODO: It can be optimized.
+func (b bitmap) selectAt(idx int) uint16 {
+	data := b[startIdx:]
+	n := uint16(len(data))
+	for i := uint16(0); i < n; i++ {
+		x := data[i]
+		c := bits.OnesCount16(x)
+		if idx < c {
+			for pos := uint16(0); pos < 16; pos++ {
+				if idx == 0 && x&bitmapMask[pos] > 0 {
+					return i*16 + pos
+				}
+				if x&bitmapMask[pos] > 0 {
+					idx--
+				}
+			}
+
+		}
+		idx -= c
+	}
+	panic("should not reach here")
 }
 
 // bitValue returns a 0 or a 1 depending upon whether x is present in the bitmap, where 1 means
@@ -481,7 +597,7 @@ func (b bitmap) maximum() uint16 {
 	if N == 0 {
 		return 0
 	}
-	for i := len(b); i >= int(startIdx); i-- {
+	for i := len(b) - 1; i >= int(startIdx); i-- {
 		x := b[i]
 		tz := bits.TrailingZeros16(x)
 		if tz == 16 {

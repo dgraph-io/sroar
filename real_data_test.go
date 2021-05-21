@@ -1,4 +1,4 @@
-package roar
+package sroar
 
 import (
 	"archive/zip"
@@ -165,6 +165,8 @@ func TestOrRealData(t *testing.T) {
 
 		bitmaps := make([]*Bitmap, len(zipFile.File))
 		valMap := make(map[uint64]struct{})
+
+		res2 := NewBitmap()
 		// For each file in the zip, create a new bitmap and check the created bitmap has correct
 		// cardinality as well as it has all the elements.
 		for i, f := range zipFile.File {
@@ -174,24 +176,26 @@ func TestOrRealData(t *testing.T) {
 			b := NewBitmap()
 			for _, v := range vals {
 				b.Set(v)
+				res2.Set(v)
 				valMap[v] = struct{}{}
 			}
 			require.Equal(t, len(vals), b.GetCardinality())
 			for _, v := range vals {
-				require.True(t, b.Has(v))
+				require.True(t, b.Contains(v))
 			}
 			bitmaps[i] = b
 		}
 
 		// Check that union operation is correct.
 		res := FastOr(bitmaps...)
-		c := res.GetCardinality()
 
 		t.Logf("Result: %s\n", res)
-		require.Equal(t, len(valMap), c)
+		require.Equal(t, len(valMap), res.GetCardinality())
+		require.Equal(t, len(valMap), res2.GetCardinality())
 
 		for k := range valMap {
-			require.True(t, res.Has(k))
+			require.True(t, res.Contains(k))
+			require.True(t, res2.Contains(k))
 		}
 	}
 
