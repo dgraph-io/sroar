@@ -420,9 +420,8 @@ func TestOr(t *testing.T) {
 	require.Equal(t, N/2, b.GetCardinality())
 	res := Or(a, b)
 	require.Equal(t, N, res.GetCardinality())
-	a.Or(b)
+	a.Or(b, 0)
 	require.Equal(t, N, a.GetCardinality())
-
 }
 
 func TestCardinality(t *testing.T) {
@@ -563,4 +562,29 @@ func TestClone(t *testing.T) {
 	b := a.Clone()
 	require.Equal(t, a.GetCardinality(), b.GetCardinality())
 	require.Equal(t, a.ToArray(), b.ToArray())
+}
+
+func TestContainerFull(t *testing.T) {
+	c := make([]uint16, maxContainerSize)
+	b := bitmap(c)
+	b[indexType] = typeBitmap
+	b[indexSize] = maxContainerSize
+	for i := 0; i < 1<<16; i++ {
+		b.add(uint16(i))
+	}
+	require.Equal(t, math.MaxUint16+1, getCardinality(b))
+
+	c2 := make([]uint16, maxContainerSize)
+	copy(c2, c)
+	b2 := bitmap(c2)
+
+	b.orBitmap(b2, nil, runInline)
+	require.Equal(t, math.MaxUint16+1, getCardinality(b))
+
+	setCardinality(b, invalidCardinality)
+	b.orBitmap(b2, nil, runInline)
+	require.Equal(t, invalidCardinality, getCardinality(b))
+
+	setCardinality(b, b.cardinality())
+	require.Equal(t, maxCardinality, getCardinality(b))
 }
