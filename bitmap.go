@@ -292,12 +292,10 @@ func (ra Bitmap) getContainer(offset uint64) []uint16 {
 }
 
 func (ra *Bitmap) Clone() *Bitmap {
-	rb := NewBitmap()
-	rb.data = make([]uint16, len(ra.data))
-	copy(rb.data, ra.data)
-	sz := toUint64Slice(rb.data[:4])[0]
-	rb.keys = toUint64Slice(rb.data[:sz])
-	return rb
+	abuf := ra.ToBuffer()
+	bbuf := make([]byte, len(abuf))
+	copy(bbuf, abuf)
+	return FromBuffer(bbuf)
 }
 
 func (ra *Bitmap) IsEmpty() bool {
