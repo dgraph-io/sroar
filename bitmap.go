@@ -25,17 +25,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-var (
-	empty          = make([]uint16, 16<<20)
-	indexTotalSize = 0
-	indexNumKeys   = 1
-	// index 2 and 3 are unused now.
-	indexStart = 4
-)
+var empty = make([]uint16, 16<<20)
 
 const mask = uint64(0xFFFFFFFFFFFF0000)
 
-// First uint64 contains the length of the node.
 type Bitmap struct {
 	data []uint16
 	keys node
@@ -49,7 +42,12 @@ func FromBuffer(data []byte) *Bitmap {
 	if len(data) < 8 {
 		return NewBitmap()
 	}
-	du := toUint16Slice(data)
+	// TODO(Ahsan): There is an issue if we don't copy over the buffer to create a bitmap. The
+	// in-memory bitmap expands the buffer and the pointer might change. So the parent buffer will
+	// be altered partially which makes it corrupt. We might want to keep a pointer to byte slice.
+	dup := make([]byte, len(data))
+	copy(dup, data)
+	du := toUint16Slice(dup)
 	x := toUint64Slice(du[:4])[0]
 	return &Bitmap{
 		data: du,
@@ -73,16 +71,16 @@ func NewBitmapWith(numKeys int) *Bitmap {
 		// Each key must also keep an offset. So, we need to double the number
 		// of uint64s allocated. Plus, we need to make space for the first 2
 		// uint64s to store the number of keys.
-		data: make([]uint16, 4*(2*numKeys+4)),
+		data: make([]uint16, 4*(2*numKeys+2)),
 	}
 	ra.keys = toUint64Slice(ra.data)
-	ra.keys.setAt(indexTotalSize, uint64(len(ra.data)))
+	ra.keys.setAt(indexNodeSize, uint64(len(ra.data)))
 
 	// Always generate a container for key = 0x00. Otherwise, node gets confused
 	// about whether a zero key is a new key or not.
 	offset := ra.newContainer(minContainerSize)
 	// First two are for num keys. index=2 -> 0 key. index=3 -> offset.
-	ra.keys.setAt(indexStart+1, offset)
+	ra.keys.setAt(indexNodeStart+1, offset)
 	ra.keys.setNumKeys(1)
 
 	return ra
@@ -180,6 +178,7 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 	if sz >= 2048 {
 		// Size is in uint16. Half of max allowed size. If we're expanding the container by more
 		// than 2048, we should just cap it to max size of 4096.
+		assert(sz < maxContainerSize)
 		bySize = maxContainerSize - sz
 	}
 
@@ -743,7 +742,12 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 	}
 }
 
-func (dst *Bitmap) Or(src *Bitmap, runMode int) {
+// TODO: Check if we want to use lazyMode
+func (dst *Bitmap) Or(src *Bitmap) {
+	dst.or(src, runInline)
+}
+
+func (dst *Bitmap) or(src *Bitmap, runMode int) {
 	srcIdx, numKeys := 0, src.keys.numKeys()
 
 	buf := make([]uint16, maxContainerSize)
@@ -926,7 +930,7 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 
 	// dst Bitmap is ready to be ORed with the given Bitmaps.
 	for _, b := range bitmaps {
-		dst.Or(b, runLazy)
+		dst.or(b, runLazy)
 	}
 
 	for i := 0; i < dst.keys.numKeys(); i++ {

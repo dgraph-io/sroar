@@ -5,31 +5,30 @@ import (
 	"strings"
 )
 
+var (
+	indexNodeSize  = 0
+	indexNumKeys   = 1
+	indexNodeStart = 2
+)
+
 // node stores uint64 keys and the corresponding container offset in the buffer.
-// 0th index (keyOffset) is used for storing the size of node in bytes.
-// 1st index (valOffset) is used for storing the number of keys.
+// 0th index (indexNodeSize) is used for storing the size of node in bytes.
+// 1st index (indexNumKeys) is used for storing the number of keys.
 type node []uint64
 
-func (n node) uint64(start int) uint64 { return n[start] }
+func keyOffset(i int) int { return indexNodeStart + 2*i }
+func valOffset(i int) int { return indexNodeStart + 1 + 2*i }
 
-// func (n node) uint32(start int) uint32 { return *(*uint32)(unsafe.Pointer(&n[start])) }
-
-func keyOffset(i int) int          { return indexStart + 2*i }
-func valOffset(i int) int          { return indexStart + 1 + 2*i }
 func (n node) numKeys() int        { return int(n[indexNumKeys]) }
-func (n node) maxKeys() int        { return (len(n) - indexStart) / 2 }
+func (n node) maxKeys() int        { return (len(n) - indexNodeStart) / 2 }
 func (n node) key(i int) uint64    { return n[keyOffset(i)] }
 func (n node) val(i int) uint64    { return n[valOffset(i)] }
 func (n node) data(i int) []uint64 { return n[keyOffset(i):keyOffset(i+1)] }
 
-func (n node) setAt(start int, k uint64) {
-	n[start] = k
-}
+func (n node) uint64(idx int) uint64   { return n[idx] }
+func (n node) setAt(idx int, k uint64) { n[idx] = k }
 
-func (n node) setNumKeys(num int) {
-	// 1st index is used for storing the number of keys.
-	n[1] = uint64(num)
-}
+func (n node) setNumKeys(num int) { n[indexNumKeys] = uint64(num) }
 
 func (n node) maxKey() uint64 {
 	idx := n.numKeys()
@@ -42,7 +41,7 @@ func (n node) maxKey() uint64 {
 
 func (n node) moveRight(lo int) {
 	hi := n.numKeys()
-	assert(hi != n.maxKeys())
+	assert(!n.isFull())
 	// copy works despite of overlap in src and dst.
 	// See https://golang.org/pkg/builtin/#copy
 	copy(n[keyOffset(lo+1):keyOffset(hi+1)], n[keyOffset(lo):keyOffset(hi)])

@@ -420,7 +420,7 @@ func TestOr(t *testing.T) {
 	require.Equal(t, N/2, b.GetCardinality())
 	res := Or(a, b)
 	require.Equal(t, N, res.GetCardinality())
-	a.Or(b, 0)
+	a.or(b, 0)
 	require.Equal(t, N, a.GetCardinality())
 }
 
