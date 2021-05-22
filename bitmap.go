@@ -742,6 +742,7 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 	}
 }
 
+// TODO: Check if we want to use lazyMode
 func (dst *Bitmap) Or(src *Bitmap) {
 	dst.or(src, runInline)
 }
