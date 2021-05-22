@@ -42,6 +42,9 @@ func FromBuffer(data []byte) *Bitmap {
 	if len(data) < 8 {
 		return NewBitmap()
 	}
+	// TODO(Ahsan): There is an issue if we don't copy over the buffer to create a bitmap. The
+	// in-memory bitmap expands the buffer and the pointer might change. So the parent buffer will
+	// be altered partially which makes it corrupt. We might want to keep a pointer to byte slice.
 	dup := make([]byte, len(data))
 	copy(dup, data)
 	du := toUint16Slice(dup)
