@@ -38,13 +38,24 @@ type Bitmap struct {
 	memMoved int
 }
 
+// From buffer returns a pointer to bitmap corresponding to the given buffer. This bitmap shouldn't
+// be modified because it might corrupt the given buffer.
 func FromBuffer(data []byte) *Bitmap {
 	if len(data) < 8 {
 		return NewBitmap()
 	}
-	// TODO(Ahsan): There is an issue if we don't copy over the buffer to create a bitmap. The
-	// in-memory bitmap expands the buffer and the pointer might change. So the parent buffer will
-	// be altered partially which makes it corrupt. We might want to keep a pointer to byte slice.
+	du := toUint16Slice(data)
+	x := toUint64Slice(du[:4])[0]
+	return &Bitmap{
+		data: du,
+		keys: toUint64Slice(du[:x]),
+	}
+}
+
+func FromBufferWithCopy(data []byte) *Bitmap {
+	if len(data) < 8 {
+		return NewBitmap()
+	}
 	dup := make([]byte, len(data))
 	copy(dup, data)
 	du := toUint16Slice(dup)
