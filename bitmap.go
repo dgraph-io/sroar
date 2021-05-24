@@ -38,7 +38,7 @@ type Bitmap struct {
 	memMoved int
 }
 
-// From buffer returns a pointer to bitmap corresponding to the given buffer. This bitmap shouldn't
+// FromBuffer returns a pointer to bitmap corresponding to the given buffer. This bitmap shouldn't
 // be modified because it might corrupt the given buffer.
 func FromBuffer(data []byte) *Bitmap {
 	if len(data) < 8 {
@@ -52,6 +52,8 @@ func FromBuffer(data []byte) *Bitmap {
 	}
 }
 
+// FromBufferWithCopy creates a copy of the given buffer and returns a bitmap based on the copied
+// buffer. This bitmap is safe for both read and write operations.
 func FromBufferWithCopy(data []byte) *Bitmap {
 	if len(data) < 8 {
 		return NewBitmap()
