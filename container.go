@@ -530,17 +530,26 @@ func (b bitmap) orArray(other array, buf []uint16, runMode int) []uint16 {
 
 func (b bitmap) all() []uint16 {
 	var res []uint16
+	b.iterate(func(x uint16) bool {
+		res = append(res, x)
+		return true
+	})
+	return res
+}
+
+func (b bitmap) iterate(cb func(x uint16) bool) {
 	data := b[startIdx:]
 	for idx := uint16(0); idx < uint16(len(data)); idx++ {
 		x := data[idx]
 		// TODO: This could potentially be optimized.
 		for pos := uint16(0); pos < 16; pos++ {
 			if x&bitmapMask[pos] > 0 {
-				res = append(res, (idx<<4)|pos)
+				if !cb((idx << 4) | pos) {
+					return
+				}
 			}
 		}
 	}
-	return res
 }
 
 //TODO: It can be optimized.

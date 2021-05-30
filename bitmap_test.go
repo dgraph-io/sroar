@@ -564,6 +564,41 @@ func TestClone(t *testing.T) {
 	require.Equal(t, a.ToArray(), b.ToArray())
 }
 
+func TestIterate(t *testing.T) {
+	a := NewBitmap()
+	N := 100
+
+	var values []uint64
+	for i := 0; i < N; i++ {
+		value := uint64(rand.Int63n(math.MaxInt64))
+		values = append(values, value)
+		a.Set(value)
+	}
+
+	var iterated []uint64
+	a.Iterate(func(x uint64) bool {
+		iterated = append(iterated, x)
+		return true
+	})
+	require.ElementsMatch(t, values, iterated)
+}
+
+func TestIterateHalt(t *testing.T) {
+	a := NewBitmap()
+	N := 100
+
+	for i := 0; i < N; i++ {
+		a.Set(uint64(rand.Int63n(math.MaxInt64)))
+	}
+
+	var iterated []uint64
+	a.Iterate(func(x uint64) bool {
+		iterated = append(iterated, x)
+		return false
+	})
+	require.Len(t, iterated, 1)
+}
+
 func TestContainerFull(t *testing.T) {
 	c := make([]uint16, maxContainerSize)
 	b := bitmap(c)

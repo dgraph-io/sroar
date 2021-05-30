@@ -512,8 +512,11 @@ func (ra *Bitmap) GetCardinality() int {
 	return sz
 }
 
-func (ra *Bitmap) ToArray() []uint64 {
-	var res []uint64
+// Iterate iterates over the bitmap, calling the given callback with each value in the bitmap.  If the callback returns
+// false, the iteration is halted.
+// The iteration results are undefined if the bitmap is modified (e.g., with Set or Remove).
+// There is no guarantee as to what order the values will be iterated
+func (ra *Bitmap) Iterate(cb func(x uint64) bool) {
 	N := ra.keys.numKeys()
 	for i := 0; i < N; i++ {
 		key := ra.keys.key(i)
@@ -524,16 +527,25 @@ func (ra *Bitmap) ToArray() []uint64 {
 		case typeArray:
 			a := array(c)
 			for _, lo := range a.all() {
-				res = append(res, key|uint64(lo))
+				if !cb(key | uint64(lo)) {
+					return
+				}
 			}
 		case typeBitmap:
 			b := bitmap(c)
-			out := b.all()
-			for _, x := range out {
-				res = append(res, key|uint64(x))
-			}
+			b.iterate(func(x uint16) bool {
+				return cb(key | uint64(x))
+			})
 		}
 	}
+}
+
+func (ra *Bitmap) ToArray() []uint64 {
+	var res []uint64
+	ra.Iterate(func(x uint64) bool {
+		res = append(res, x)
+		return true
+	})
 	return res
 }
 

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -117,10 +118,31 @@ func BenchmarkIterator(b *testing.B) {
 		bm.Set(uint64(i))
 	}
 	b.ResetTimer()
-	it := bm.NewIterator()
+	b.ReportAllocs()
+
+	var x uint64
 	for i := 0; i < b.N; i++ {
+		it := bm.NewIterator()
 		for it.HasNext() {
-			it.Next()
+			x = it.Next()
 		}
+	}
+	runtime.KeepAlive(x)
+}
+
+func BenchmarkIterate(b *testing.B) {
+	bm := NewBitmap()
+
+	N := int(1e5)
+	for i := 0; i < N; i++ {
+		bm.Set(uint64(i))
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		bm.Iterate(func(x uint64) bool {
+			return true
+		})
 	}
 }
