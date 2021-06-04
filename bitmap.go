@@ -72,6 +72,12 @@ func (ra *Bitmap) ToBuffer() []byte {
 	return toByteSlice(ra.data)
 }
 
+func (ra *Bitmap) ToBufferWithCopy() []byte {
+	buf := make([]uint16, len(ra.data))
+	copy(buf, ra.data)
+	return toByteSlice(buf)
+}
+
 func NewBitmap() *Bitmap {
 	return NewBitmapWith(2)
 }
