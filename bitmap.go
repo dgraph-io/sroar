@@ -610,9 +610,29 @@ func (ra *Bitmap) extreme(dir int) uint64 {
 	if N == 0 {
 		return 0
 	}
-	k := ra.keys.key(0)
-	offset := ra.keys.val(0)
-	c := ra.getContainer(offset)
+
+	var k uint64
+	var c []uint16
+
+	if dir == fwd {
+		for i := 0; i < N; i++ {
+			offset := ra.keys.val(i)
+			c = ra.getContainer(offset)
+			if getCardinality(c) > 0 {
+				k = ra.keys.key(i)
+				break
+			}
+		}
+	} else {
+		for i := N - 1; i >= 0; i-- {
+			offset := ra.keys.val(i)
+			c = ra.getContainer(offset)
+			if getCardinality(c) > 0 {
+				k = ra.keys.key(i)
+				break
+			}
+		}
+	}
 
 	switch c[indexType] {
 	case typeArray:
