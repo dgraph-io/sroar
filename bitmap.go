@@ -610,8 +610,12 @@ func (ra *Bitmap) extreme(dir int) uint64 {
 	if N == 0 {
 		return 0
 	}
-	k := ra.keys.key(0)
-	offset := ra.keys.val(0)
+	n := 0
+	if dir == rev {
+		n = ra.keys.numKeys() - 1
+	}
+	k := ra.keys.key(n)
+	offset := ra.keys.val(n)
 	c := ra.getContainer(offset)
 
 	switch c[indexType] {

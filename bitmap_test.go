@@ -588,3 +588,17 @@ func TestContainerFull(t *testing.T) {
 	setCardinality(b, b.cardinality())
 	require.Equal(t, maxCardinality, getCardinality(b))
 }
+
+func TestExtremes(t *testing.T) {
+	a := NewBitmap()
+	require.Equal(t, uint64(0), a.Minimum())
+	require.Equal(t, uint64(0), a.Maximum())
+
+	a.Set(1)
+	require.Equal(t, uint64(1), a.Minimum())
+	require.Equal(t, uint64(1), a.Maximum())
+
+	a.Set(100000)
+	require.Equal(t, uint64(1), a.Minimum())
+	require.Equal(t, uint64(100000), a.Maximum())
+}
