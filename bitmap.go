@@ -350,9 +350,53 @@ func (ra *Bitmap) Set(x uint64) bool {
 	panic("we shouldn't reach here")
 }
 
+func (ra *Bitmap) SetSorted(vals []uint64) {
+	var arr []uint16
+	var hi, lastHi, off uint64
+
+	finalize := func(l []uint16, key uint64) {
+		if len(l) == 0 {
+			return
+		}
+		if len(l) <= 4096 {
+			sz := uint16(4 + len(l))
+			off = ra.newContainer(sz)
+			c := ra.getContainer(off)
+			c[indexSize] = sz
+			c[indexType] = typeArray
+			setCardinality(c, len(l))
+			for i := 0; i < len(l); i++ {
+				c[int(startIdx)+i] = l[i]
+			}
+
+		} else {
+			off = ra.newContainer(maxContainerSize)
+			c := ra.getContainer(off)
+			c[indexSize] = maxContainerSize
+			c[indexType] = typeBitmap
+			for _, v := range l {
+				bitmap(c).add(v)
+			}
+		}
+		ra.setKey(key, off)
+		return
+	}
+	for _, x := range vals {
+		hi = x & mask
+		// Finalize the last container before proceeding ahead
+		if hi != 0 && hi != lastHi {
+			finalize(arr, lastHi)
+			arr = arr[:0]
+		}
+		arr = append(arr, uint16(x))
+		lastHi = hi
+	}
+	finalize(arr, lastHi)
+}
+
 // TODO: Potentially this can be optimized.
-func (ra *Bitmap) SetMany(x []uint64) {
-	for _, k := range x {
+func (ra *Bitmap) SetMany(vals []uint64) {
+	for _, k := range vals {
 		ra.Set(k)
 	}
 }
