@@ -677,17 +677,18 @@ func (ra *Bitmap) And(bm *Bitmap) {
 			ai++
 			bi++
 		} else if ak < bk {
-			// need to remove the container of a
-			off := a.newContainer(minContainerSize)
-			a.setKey(ak, off)
+			off := a.keys.val(ai)
+			ac := a.getContainer(off)
+			zeroOutContainer(ac)
 			ai++
 		} else {
 			bi++
 		}
 	}
 	for ai < an {
-		off := a.newContainer(minContainerSize)
-		a.setKey(a.keys.key(ai), off)
+		off := a.keys.val(ai)
+		ac := a.getContainer(off)
+		zeroOutContainer(ac)
 		ai++
 	}
 }
