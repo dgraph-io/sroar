@@ -652,8 +652,7 @@ func (ra *Bitmap) And(bm *Bitmap) {
 			bi++
 		} else if ak < bk {
 			off := a.keys.val(ai)
-			ac := a.getContainer(off)
-			zeroOutContainer(ac)
+			zeroOutContainer(a.getContainer(off))
 			ai++
 		} else {
 			bi++
@@ -661,8 +660,7 @@ func (ra *Bitmap) And(bm *Bitmap) {
 	}
 	for ai < an {
 		off := a.keys.val(ai)
-		ac := a.getContainer(off)
-		zeroOutContainer(ac)
+		zeroOutContainer(a.getContainer(off))
 		ai++
 	}
 }
