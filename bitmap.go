@@ -659,7 +659,7 @@ func (ra *Bitmap) And(bm *Bitmap) {
 
 	for ai < an && bi < bn {
 		ak := a.keys.key(ai)
-		bk := a.keys.key(bi)
+		bk := b.keys.key(bi)
 		if ak == bk {
 			off := a.keys.val(ai)
 			ac := a.getContainer(off)
