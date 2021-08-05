@@ -111,14 +111,13 @@ func TestManyIterator(t *testing.T) {
 
 func BenchmarkIterator(b *testing.B) {
 	bm := NewBitmap()
-
-	N := int(1e5)
-	for i := 0; i < N; i++ {
+	for i := 0; i < int(1e5); i++ {
 		bm.Set(uint64(i))
 	}
+
 	b.ResetTimer()
-	it := bm.NewIterator()
 	for i := 0; i < b.N; i++ {
+		it := bm.NewIterator()
 		for it.HasNext() {
 			it.Next()
 		}

@@ -78,6 +78,24 @@ func setCardinality(data []uint16, c int) {
 	}
 }
 
+func zeroOutContainer(c []uint16) {
+	switch c[indexType] {
+	case typeArray:
+		array(c).zeroOut()
+	case typeBitmap:
+		bitmap(c).zeroOut()
+	}
+}
+
+func removeRangeContainer(c []uint16, lo, hi uint16) {
+	switch c[indexType] {
+	case typeArray:
+		array(c).removeRange(lo, hi)
+	case typeBitmap:
+		bitmap(c).removeRange(lo, hi)
+	}
+}
+
 func calculateAndSetCardinality(data []uint16) {
 	if data[indexType] != typeBitmap {
 		panic("Non-bitmap containers should always have cardinality set correctly")
@@ -183,6 +201,10 @@ func (c array) removeRange(lo, hi uint16) {
 	}
 	copy(c[st+loIdx:], c[st+hiIdx:])
 	setCardinality(c, N-hiIdx+loIdx)
+}
+
+func (c array) zeroOut() {
+	setCardinality(c, 0)
 }
 
 // TODO: Figure out how memory allocation would work in these situations. Perhaps use allocator here?
@@ -614,6 +636,13 @@ func (b bitmap) cardinality() int {
 		num += bits.OnesCount16(x)
 	}
 	return num
+}
+
+func (b bitmap) zeroOut() {
+	setCardinality(b, 0)
+	for i := range b[startIdx:] {
+		b[startIdx+uint16(i)] = 0
+	}
 }
 
 var (
