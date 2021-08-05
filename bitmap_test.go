@@ -363,6 +363,21 @@ func TestSetGet(t *testing.T) {
 	}
 }
 
+func TestSetSorted(t *testing.T) {
+	N := int(1e6)
+	var arr []uint64
+	for i := 0; i < N; i++ {
+		arr = append(arr, uint64(i))
+	}
+	r := FromSortedList(arr)
+	require.Equal(t, len(arr), r.GetCardinality())
+
+	rarr := r.ToArray()
+	for i := 0; i < N; i++ {
+		require.Equal(t, uint64(i), rarr[i])
+	}
+}
+
 func TestAnd(t *testing.T) {
 	a := NewBitmap()
 	b := NewBitmap()
