@@ -87,6 +87,15 @@ func zeroOutContainer(c []uint16) {
 	}
 }
 
+func removeRangeContainer(c []uint16, lo, hi uint16) {
+	switch c[indexType] {
+	case typeArray:
+		array(c).removeRange(lo, hi)
+	case typeBitmap:
+		bitmap(c).removeRange(lo, hi)
+	}
+}
+
 func calculateAndSetCardinality(data []uint16) {
 	if data[indexType] != typeBitmap {
 		panic("Non-bitmap containers should always have cardinality set correctly")
@@ -632,7 +641,7 @@ func (b bitmap) cardinality() int {
 func (b bitmap) zeroOut() {
 	setCardinality(b, 0)
 	for i := range b[startIdx:] {
-		b[i] = 0
+		b[startIdx+uint16(i)] = 0
 	}
 }
 

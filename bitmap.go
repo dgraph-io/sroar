@@ -435,17 +435,9 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 
 	//  Complete range lie in a single container
 	if k1 == k2 {
-		off, has := ra.keys.getValue(k1)
-		if has {
+		if off, has := ra.keys.getValue(k1); has {
 			c := ra.getContainer(off)
-			switch c[indexType] {
-			case typeArray:
-				p := array(c)
-				p.removeRange(uint16(lo), uint16(hi)-1)
-			case typeBitmap:
-				b := bitmap(c)
-				b.removeRange(uint16(lo), uint16(hi)-1)
-			}
+			removeRangeContainer(c, uint16(lo), uint16(hi)-1)
 		}
 		return
 	}
@@ -463,46 +455,28 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		if key >= k2 {
 			break
 		}
-		// TODO(Ahsan): We should probably scootLeft or zero out the container.
-		if _, has := ra.keys.getValue(key); has {
-			off := ra.newContainer(minContainerSize)
-			ra.setKey(key, off)
+		if off, has := ra.keys.getValue(key); has {
+			zeroOutContainer(ra.getContainer(off))
 		}
 	}
 
 	// Remove elements >= lo in k1's container
-	off, has := ra.keys.getValue(k1)
-	if has {
-		if uint16(lo) == 0 {
-			off := ra.newContainer(minContainerSize)
-			ra.setKey(k1, off)
-		}
+	if off, has := ra.keys.getValue(k1); has {
 		c := ra.getContainer(off)
-		switch c[indexType] {
-		case typeArray:
-			p := array(c)
-			p.removeRange(uint16(lo), math.MaxUint16)
-		case typeBitmap:
-			b := bitmap(c)
-			b.removeRange(uint16(lo), math.MaxUint16)
+		if uint16(lo) == 0 {
+			zeroOutContainer(c)
+		} else {
+			removeRangeContainer(c, uint16(lo), math.MaxUint16)
 		}
 	}
 
 	// Remove all elements < hi in k2's container
-	off, has = ra.keys.getValue(k2)
-	if has {
-		if uint16(hi) == math.MaxUint16 {
-			off := ra.newContainer(minContainerSize)
-			ra.setKey(k2, off)
-		}
+	if off, has := ra.keys.getValue(k2); has {
 		c := ra.getContainer(off)
-		switch c[indexType] {
-		case typeArray:
-			p := array(c)
-			p.removeRange(0, uint16(hi)-1)
-		case typeBitmap:
-			b := bitmap(c)
-			b.removeRange(0, uint16(hi)-1)
+		if uint16(hi) == math.MaxUint16 {
+			zeroOutContainer(c)
+		} else {
+			removeRangeContainer(c, 0, uint16(hi)-1)
 		}
 	}
 }
