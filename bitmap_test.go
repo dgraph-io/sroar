@@ -369,8 +369,7 @@ func TestSetSorted(t *testing.T) {
 	for i := 0; i < N; i++ {
 		arr = append(arr, uint64(i))
 	}
-	r := NewBitmap()
-	r.SetSorted(arr)
+	r := FromSortedList(arr)
 	require.Equal(t, len(arr), r.GetCardinality())
 
 	rarr := r.ToArray()

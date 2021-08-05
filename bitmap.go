@@ -350,10 +350,11 @@ func (ra *Bitmap) Set(x uint64) bool {
 	panic("we shouldn't reach here")
 }
 
-func (ra *Bitmap) SetSorted(vals []uint64) {
+func FromSortedList(vals []uint64) *Bitmap {
 	var arr []uint16
 	var hi, lastHi, off uint64
 
+	ra := NewBitmap()
 	finalize := func(l []uint16, key uint64) {
 		if len(l) == 0 {
 			return
@@ -392,6 +393,7 @@ func (ra *Bitmap) SetSorted(vals []uint64) {
 		lastHi = hi
 	}
 	finalize(arr, lastHi)
+	return ra
 }
 
 // TODO: Potentially this can be optimized.
