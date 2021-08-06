@@ -552,6 +552,13 @@ func TestRemoveRange(t *testing.T) {
 	a.Set(uint64(3 * N / 4))
 	require.Equal(t, 3, a.GetCardinality())
 
+	var arr []uint64
+	for i := 0; i < 123; i++ {
+		arr = append(arr, uint64(i))
+	}
+	b := FromSortedList(arr)
+	b.RemoveRange(50, math.MaxUint64)
+	require.Equal(t, 50, b.GetCardinality())
 }
 
 func TestSelect(t *testing.T) {

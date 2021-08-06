@@ -174,16 +174,11 @@ func (c array) removeRange(lo, hi uint16) {
 
 	st := int(startIdx)
 	loVal := c[st+loIdx]
-	hiVal := c[st+hiIdx]
-
 	N := getCardinality(c)
 
 	// remove range doesn't intersect with any element in the array.
 	if hi < loVal || loIdx == N {
 		return
-	}
-	if hiVal == hi {
-		hiIdx++
 	}
 	if hiIdx == N {
 		if loIdx > 0 {
@@ -193,6 +188,9 @@ func (c array) removeRange(lo, hi uint16) {
 		}
 		setCardinality(c, loIdx)
 		return
+	}
+	if c[st+hiIdx] == hi {
+		hiIdx++
 	}
 	if loIdx == 0 {
 		copy(c[st:], c[st+hiIdx:])
