@@ -746,12 +746,10 @@ func And(a, b *Bitmap) *Bitmap {
 
 func (ra *Bitmap) AndNot(bm *Bitmap) {
 	a, b := ra, bm
-	ai, an := 0, a.keys.numKeys()
-	bi, bn := 0, b.keys.numKeys()
+	var ai, bi int
 
 	buf := make([]uint16, maxContainerSize)
-
-	for ai < an && bi < bn {
+	for ai < a.keys.numKeys() && bi < b.keys.numKeys() {
 		ak := a.keys.key(ai)
 		bk := b.keys.key(bi)
 		if ak == bk {
@@ -768,12 +766,8 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 			offset := a.newContainer(uint16(len(c)))
 			copy(a.data[offset:], c)
 			a.setKey(ak, offset)
-			ai++
 			bi++
-		} else if ak < bk {
-			// nothing to be done
-			ai++
-		} else {
+		} else if ak > bk {
 			// ak > bk
 			// need to add this b container to a
 			bk := b.keys.key(bi)
@@ -785,10 +779,11 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 			a.setKey(bk, offset)
 			bi++
 		}
+		ai++
 	}
 
 	// pick up all the keys left in b.
-	for bi < bn {
+	for bi < b.keys.numKeys() {
 		bk := b.keys.key(bi)
 		off := b.keys.val(bi)
 		bc := b.getContainer(off)
