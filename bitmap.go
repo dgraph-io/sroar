@@ -925,7 +925,6 @@ func FastParOr(numGo int, bitmaps ...*Bitmap) *Bitmap {
 		}(start, end)
 	}
 	wg.Wait()
-	fmt.Println(len(res))
 	return FastOr(res...)
 }
 
