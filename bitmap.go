@@ -33,6 +33,8 @@ type Bitmap struct {
 	data []uint16
 	keys node
 
+	_ptr []byte
+
 	// memMoved keeps track of how many uint16 moves we had to do. The smaller
 	// this number, the more efficient we have been.
 	memMoved int
@@ -48,6 +50,7 @@ func FromBuffer(data []byte) *Bitmap {
 	x := toUint64Slice(du[:4])[0]
 	return &Bitmap{
 		data: du,
+		_ptr: data,
 		keys: toUint64Slice(du[:x]),
 	}
 }
@@ -62,8 +65,10 @@ func FromBufferWithCopy(data []byte) *Bitmap {
 	copy(dup, data)
 	du := toUint16Slice(dup)
 	x := toUint64Slice(du[:4])[0]
+
 	return &Bitmap{
 		data: du,
+		_ptr: dup,
 		keys: toUint64Slice(du[:x]),
 	}
 }
