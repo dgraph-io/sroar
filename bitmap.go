@@ -804,8 +804,12 @@ func (dst *Bitmap) or(src *Bitmap, runMode int) {
 	srcIdx, numKeys := 0, src.keys.numKeys()
 
 	buf := make([]uint16, maxContainerSize)
-	for srcIdx < numKeys {
+	for ; srcIdx < numKeys; srcIdx++ {
 		srcCont := src.getContainer(src.keys.val(srcIdx))
+		if getCardinality(srcCont) == 0 {
+			continue
+		}
+
 		key := src.keys.key(srcIdx)
 
 		dstIdx := dst.keys.search(key)
@@ -823,7 +827,6 @@ func (dst *Bitmap) or(src *Bitmap, runMode int) {
 				dst.setKey(key, offset)
 			}
 		}
-		srcIdx++
 	}
 }
 
@@ -928,6 +931,13 @@ func FastParOr(numGo int, bitmaps ...*Bitmap) *Bitmap {
 // FastOr would merge given Bitmaps into one Bitmap. This is faster than
 // doing an OR over the bitmaps iteratively.
 func FastOr(bitmaps ...*Bitmap) *Bitmap {
+	if len(bitmaps) == 0 {
+		return NewBitmap()
+	}
+	if len(bitmaps) == 1 {
+		return bitmaps[0]
+	}
+
 	// We first figure out the container distribution across the bitmaps. We do
 	// that by looking at the key of the container, and the cardinality. We
 	// assume the worst-case scenario where the union would result in a
