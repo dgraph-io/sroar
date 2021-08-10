@@ -979,7 +979,7 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	// without having to move a lot of memory.
 	for key, card := range containers {
 		// Ensure this condition exactly maps up with above.
-		if card < 4096 {
+		if card < 4096 && card > 0 {
 			if card < minContainerSize {
 				card = minContainerSize
 			}
