@@ -192,7 +192,7 @@ func (ra *Bitmap) scootLeft(offset uint64, size uint64) {
 func (ra *Bitmap) removeKey(idx int) {
 	off := uint64(4 * (indexNodeStart + 2*idx))
 	ra.scootLeft(off, 8)
-	ra.keys.updateOffsetsLeft(off, 8)
+	ra.keys.updateOffsets(off, 8, false)
 	ra.keys.setNumKeys(ra.keys.numKeys() - 1)
 }
 
@@ -200,7 +200,7 @@ func (ra *Bitmap) removeContainer(off uint64) {
 	cont := ra.getContainer(off)
 	sz := uint64(cont[indexSize])
 	ra.scootLeft(off, sz)
-	ra.keys.updateOffsetsLeft(off, sz)
+	ra.keys.updateOffsets(off, sz, false)
 }
 
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
@@ -230,7 +230,7 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 
 	// Select the portion to the right of the container, beyond its right boundary.
 	ra.scootRight(offset+uint64(sz), bySize)
-	ra.keys.updateOffsets(offset, uint64(bySize))
+	ra.keys.updateOffsets(offset, uint64(bySize), true)
 
 	if sz < 2048 {
 		ra.data[offset] = sz + bySize
@@ -281,7 +281,7 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 		bySize := uint16(maxContainerSize) - dstSize
 		// Select the portion to the right of the container, beyond its right boundary.
 		ra.scootRight(offset+uint64(dstSize), bySize)
-		ra.keys.updateOffsets(offset, uint64(bySize))
+		ra.keys.updateOffsets(offset, uint64(bySize), true)
 		assert(copy(ra.data[offset:], src) == len(src))
 		return
 	}
@@ -307,7 +307,7 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 		bySize := uint16(maxContainerSize) - dstSize
 		// Select the portion to the right of the container, beyond its right boundary.
 		ra.scootRight(offset+uint64(dstSize), bySize)
-		ra.keys.updateOffsets(offset, uint64(bySize))
+		ra.keys.updateOffsets(offset, uint64(bySize), true)
 
 		// Update the space of the container, so getContainer would work correctly.
 		ra.data[offset] = maxContainerSize
@@ -322,7 +322,7 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 	// targetSize is not maxSize. Let's expand to targetSize and copy array.
 	bySize := targetSz - dstSize
 	ra.scootRight(offset+uint64(dstSize), bySize)
-	ra.keys.updateOffsets(offset, uint64(bySize))
+	ra.keys.updateOffsets(offset, uint64(bySize), true)
 	assert(copy(ra.data[offset:], src) == len(src))
 	ra.data[offset] = targetSz
 }
@@ -934,6 +934,7 @@ func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 	for _, bm := range bitmaps[1:] {
 		b.And(bm)
 	}
+	b.Cleanup()
 	return b
 }
 
