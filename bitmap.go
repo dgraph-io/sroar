@@ -1003,8 +1003,10 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	// First create the keys. We do this as a separate step, because keys are
 	// the left most portion of the data array. Adding space there requires
 	// moving a lot of pieces.
-	for key := range containers {
-		dst.setKey(key, 0)
+	for key, card := range containers {
+		if card > 0 {
+			dst.setKey(key, 0)
+		}
 	}
 
 	// Then create the bitmap containers.
