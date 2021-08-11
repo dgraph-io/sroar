@@ -636,3 +636,23 @@ func TestExtremes(t *testing.T) {
 	require.Equal(t, uint64(100000), a.Minimum())
 	require.Equal(t, uint64(100000), a.Maximum())
 }
+
+func TestCleanup(t *testing.T) {
+	a := NewBitmap()
+	n := int(1e6)
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i))
+	}
+	for i := 65536; i < n; i++ {
+		a.Remove(uint64(i))
+	}
+
+	a.Cleanup()
+	for i := 0; i < 65535; i++ {
+		require.Truef(t, a.Contains(uint64(i)), "idx: %d", i)
+	}
+	for i := 65536; i < n; i++ {
+		require.Falsef(t, a.Contains(uint64(i)), "idx: %d", i)
+	}
+
+}

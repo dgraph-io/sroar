@@ -168,8 +168,16 @@ func (n node) set(k, v uint64) bool {
 	// panic("shouldn't reach here")
 }
 
+func (n node) updateOffsetsLeft(beyond, by uint64) {
+	for i := 0; i < n.numKeys(); i++ {
+		if offset := n.val(i); offset > beyond {
+			n.setAt(valOffset(i), offset-by)
+		}
+	}
+}
+
 func (n node) updateOffsets(beyond, by uint64) {
-	for i := 0; i < n.maxKeys(); i++ {
+	for i := 0; i < n.numKeys(); i++ {
 		if offset := n.val(i); offset > beyond {
 			n.setAt(valOffset(i), offset+by)
 		}

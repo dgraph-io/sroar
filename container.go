@@ -437,7 +437,7 @@ func (b bitmap) removeRange(lo, hi uint16) {
 func (b bitmap) has(x uint16) bool {
 	idx := x >> 4
 	pos := x & 0xF
-
+	// fmt.Println(b[startIdx+idx], bitmapMask[pos])
 	has := b[startIdx+idx] & bitmapMask[pos]
 	return has > 0
 }

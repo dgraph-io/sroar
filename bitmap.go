@@ -181,6 +181,28 @@ func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 	Memclr(ra.data[offset : offset+uint64(bySize)]) // Zero out the space in the middle.
 }
 
+// scootLeft removes size number of uint16s starting from the given offset.
+func (ra *Bitmap) scootLeft(offset uint64, size uint64) {
+	n := uint64(len(ra.data))
+	right := ra.data[offset+size:]
+	ra.memMoved += copy(ra.data[offset:], right)
+	ra.data = ra.data[:n-size]
+}
+
+func (ra *Bitmap) removeKey(idx int) {
+	off := uint64(4 * (indexNodeStart + 2*idx))
+	ra.scootLeft(off, 8)
+	ra.keys.updateOffsetsLeft(off, 8)
+	ra.keys.setNumKeys(ra.keys.numKeys() - 1)
+}
+
+func (ra *Bitmap) removeContainer(off uint64) {
+	cont := ra.getContainer(off)
+	sz := uint64(cont[indexSize])
+	ra.scootLeft(off, sz)
+	ra.keys.updateOffsetsLeft(off, sz)
+}
+
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
 	ra.fastExpand(sz)
@@ -530,6 +552,8 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 			removeRangeContainer(c, 0, uint16(hi)-1)
 		}
 	}
+
+	ra.Cleanup()
 }
 
 func (ra *Bitmap) GetCardinality() int {
@@ -887,6 +911,19 @@ func Or(a, b *Bitmap) *Bitmap {
 		bi++
 	}
 	return res
+}
+
+func (ra *Bitmap) Cleanup() {
+	for idx := 1; idx < ra.keys.numKeys(); {
+		off := ra.keys.val(idx)
+		cont := ra.getContainer(off)
+		if getCardinality(cont) == 0 {
+			ra.removeContainer(off)
+			ra.removeKey(idx)
+			continue
+		}
+		idx++
+	}
 }
 
 func FastAnd(bitmaps ...*Bitmap) *Bitmap {
