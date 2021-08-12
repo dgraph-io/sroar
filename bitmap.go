@@ -181,6 +181,29 @@ func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
 	Memclr(ra.data[offset : offset+uint64(bySize)]) // Zero out the space in the middle.
 }
 
+// scootLeft removes size number of uint16s starting from the given offset.
+func (ra *Bitmap) scootLeft(offset uint64, size uint64) {
+	n := uint64(len(ra.data))
+	right := ra.data[offset+size:]
+	ra.memMoved += copy(ra.data[offset:], right)
+	ra.data = ra.data[:n-size]
+}
+
+func (ra *Bitmap) removeKey(idx int) {
+	off := uint64(4 * keyOffset(idx))
+	// remove 8 u16s, which corresponds to a key and value (two u64s)
+	ra.scootLeft(off, 8)
+	ra.keys.updateOffsets(off, 8, false)
+	ra.keys.setNumKeys(ra.keys.numKeys() - 1)
+}
+
+func (ra *Bitmap) removeContainer(off uint64) {
+	cont := ra.getContainer(off)
+	sz := uint64(cont[indexSize])
+	ra.scootLeft(off, sz)
+	ra.keys.updateOffsets(off, sz, false)
+}
+
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
 	ra.fastExpand(sz)
@@ -208,7 +231,7 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 
 	// Select the portion to the right of the container, beyond its right boundary.
 	ra.scootRight(offset+uint64(sz), bySize)
-	ra.keys.updateOffsets(offset, uint64(bySize))
+	ra.keys.updateOffsets(offset, uint64(bySize), true)
 
 	if sz < 2048 {
 		ra.data[offset] = sz + bySize
@@ -259,7 +282,7 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 		bySize := uint16(maxContainerSize) - dstSize
 		// Select the portion to the right of the container, beyond its right boundary.
 		ra.scootRight(offset+uint64(dstSize), bySize)
-		ra.keys.updateOffsets(offset, uint64(bySize))
+		ra.keys.updateOffsets(offset, uint64(bySize), true)
 		assert(copy(ra.data[offset:], src) == len(src))
 		return
 	}
@@ -285,7 +308,7 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 		bySize := uint16(maxContainerSize) - dstSize
 		// Select the portion to the right of the container, beyond its right boundary.
 		ra.scootRight(offset+uint64(dstSize), bySize)
-		ra.keys.updateOffsets(offset, uint64(bySize))
+		ra.keys.updateOffsets(offset, uint64(bySize), true)
 
 		// Update the space of the container, so getContainer would work correctly.
 		ra.data[offset] = maxContainerSize
@@ -300,7 +323,7 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 	// targetSize is not maxSize. Let's expand to targetSize and copy array.
 	bySize := targetSz - dstSize
 	ra.scootRight(offset+uint64(dstSize), bySize)
-	ra.keys.updateOffsets(offset, uint64(bySize))
+	ra.keys.updateOffsets(offset, uint64(bySize), true)
 	assert(copy(ra.data[offset:], src) == len(src))
 	ra.data[offset] = targetSz
 }
@@ -530,6 +553,8 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 			removeRangeContainer(c, 0, uint16(hi)-1)
 		}
 	}
+
+	ra.Cleanup()
 }
 
 func (ra *Bitmap) GetCardinality() int {
@@ -889,6 +914,19 @@ func Or(a, b *Bitmap) *Bitmap {
 	return res
 }
 
+func (ra *Bitmap) Cleanup() {
+	for idx := 1; idx < ra.keys.numKeys(); {
+		off := ra.keys.val(idx)
+		cont := ra.getContainer(off)
+		if getCardinality(cont) == 0 {
+			ra.removeContainer(off)
+			ra.removeKey(idx)
+			continue
+		}
+		idx++
+	}
+}
+
 func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 	if len(bitmaps) == 0 {
 		return NewBitmap()
@@ -897,6 +935,7 @@ func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 	for _, bm := range bitmaps[1:] {
 		b.And(bm)
 	}
+	b.Cleanup()
 	return b
 }
 
@@ -965,8 +1004,10 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	// First create the keys. We do this as a separate step, because keys are
 	// the left most portion of the data array. Adding space there requires
 	// moving a lot of pieces.
-	for key := range containers {
-		dst.setKey(key, 0)
+	for key, card := range containers {
+		if card > 0 {
+			dst.setKey(key, 0)
+		}
 	}
 
 	// Then create the bitmap containers.

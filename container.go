@@ -437,7 +437,6 @@ func (b bitmap) removeRange(lo, hi uint16) {
 func (b bitmap) has(x uint16) bool {
 	idx := x >> 4
 	pos := x & 0xF
-
 	has := b[startIdx+idx] & bitmapMask[pos]
 	return has > 0
 }
@@ -636,11 +635,11 @@ func (b bitmap) cardinality() int {
 	return num
 }
 
+var zeroContainer = make([]uint16, maxContainerSize)
+
 func (b bitmap) zeroOut() {
 	setCardinality(b, 0)
-	for i := range b[startIdx:] {
-		b[startIdx+uint16(i)] = 0
-	}
+	copy(b[startIdx:], zeroContainer[startIdx:])
 }
 
 var (
