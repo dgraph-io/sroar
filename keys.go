@@ -174,6 +174,7 @@ func (n node) updateOffsets(beyond, by uint64, add bool) {
 			if add {
 				n.setAt(valOffset(i), offset+by)
 			} else {
+				assert(offset >= by)
 				n.setAt(valOffset(i), offset-by)
 			}
 		}
