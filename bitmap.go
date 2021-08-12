@@ -190,7 +190,8 @@ func (ra *Bitmap) scootLeft(offset uint64, size uint64) {
 }
 
 func (ra *Bitmap) removeKey(idx int) {
-	off := uint64(4 * (indexNodeStart + 2*idx))
+	off := uint64(4 * keyOffset(idx))
+	// remove 8 u16s, which corresponds to a key and value (two u64s)
 	ra.scootLeft(off, 8)
 	ra.keys.updateOffsets(off, 8, false)
 	ra.keys.setNumKeys(ra.keys.numKeys() - 1)
