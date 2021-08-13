@@ -26,8 +26,7 @@ import (
 )
 
 func TestIteratorBasic(t *testing.T) {
-	testSz := []int{0, 1, 16, 2047, 2048, 1e4, 1e5}
-	// testSz := []int{70000}
+	testSz := []int{0, 1, 16, 2047, 2048, 1e4}
 
 	var sz int
 	test := func(t *testing.T) {
@@ -42,6 +41,13 @@ func TestIteratorBasic(t *testing.T) {
 			cnt++
 		}
 		require.Equal(t, uint64(sz), cnt)
+
+		rit := b.NewReverseIterator()
+		for rit.HasNext() {
+			cnt--
+			require.Equal(t, cnt, rit.Next())
+		}
+		require.Equal(t, uint64(0), cnt)
 	}
 	for i := range testSz {
 		sz = testSz[i]
