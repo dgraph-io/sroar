@@ -124,6 +124,7 @@ func (it *FastIterator) Next() uint64 {
 	cont := it.bm.getContainer(off)
 	card := getCardinality(cont)
 
+	// fmt.Printf("key: %d, card: %d all card: %v\n", key, card, card)
 	// we need to jump container in these scenarios
 	// - The cardinality of this container is zero
 	// - cidx is already at the last element of the container
@@ -138,6 +139,7 @@ func (it *FastIterator) Next() uint64 {
 		key = it.keys[2*it.kidx]
 		off = it.keys[2*it.kidx+1]
 		cont = it.bm.getContainer(off)
+		card = getCardinality(cont)
 	}
 
 	//  The above loop assures that we can do next in this container
