@@ -97,9 +97,9 @@ func (bm *Bitmap) NewRangeIterators(numRanges int) []*FastIterator {
 	for i := 0; i < numRanges; i++ {
 		iters[i] = bm.NewFastIterator()
 		if i == numRanges-1 {
-			iters[i].keys = iters[i].keys[width*i:]
+			iters[i].keys = iters[i].keys[2*width*i:]
 		}
-		iters[i].keys = iters[i].keys[width*i : width*(i+1)]
+		iters[i].keys = iters[i].keys[2*width*i : 1*width*(i+1)]
 	}
 	return iters
 }
