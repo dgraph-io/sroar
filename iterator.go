@@ -93,15 +93,27 @@ func (bm *Bitmap) NewRangeIterators(numRanges int) []*FastIterator {
 	keyn := bm.keys.numKeys()
 	iters := make([]*FastIterator, numRanges)
 	width := keyn / numRanges
+	rem := keyn % numRanges
 
+	cnt := 0
 	for i := 0; i < numRanges; i++ {
 		iters[i] = bm.NewFastIterator()
-		if i == numRanges-1 {
-			iters[i].keys = iters[i].keys[2*width*i:]
-		} else {
-			iters[i].keys = iters[i].keys[2*width*i : 2*width*(i+1)]
+		n := width
+		if i < rem {
+			n = width + 1
 		}
+		iters[i].keys = iters[i].keys[cnt : cnt+2*n]
+		cnt = cnt + 2*n
 	}
+
+	// for i := 0; i < numRanges; i++ {
+	// 	iters[i] = bm.NewFastIterator()
+	// 	if i == numRanges-1 {
+	// 		iters[i].keys = iters[i].keys[2*width*i:]
+	// 	} else {
+	// 		iters[i].keys = iters[i].keys[2*width*i : 2*width*(i+1)]
+	// 	}
+	// }
 	return iters
 }
 
@@ -124,7 +136,6 @@ func (it *FastIterator) Next() uint64 {
 	cont := it.bm.getContainer(off)
 	card := getCardinality(cont)
 
-	// fmt.Printf("key: %d, card: %d all card: %v\n", key, card, card)
 	// we need to jump container in these scenarios
 	// - The cardinality of this container is zero
 	// - cidx is already at the last element of the container
