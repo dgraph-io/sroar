@@ -23,13 +23,13 @@ import (
 type Iterator struct {
 	bm *Bitmap
 
-	keys []uint64
-	kidx int
+	keys   []uint64
+	keyIdx int
 
-	cidx int
+	contIdx int
 
-	bmHiIdx int // the index of current uint16 in the bitmap container, which is a list of uint16s
-	bitset  uint16
+	bitmapIdx int
+	bitset    uint16
 }
 
 func (bm *Bitmap) NewRangeIterators(numRanges int) []*Iterator {
@@ -55,11 +55,11 @@ func (bm *Bitmap) NewRangeIterators(numRanges int) []*Iterator {
 
 func (bm *Bitmap) NewIterator() *Iterator {
 	return &Iterator{
-		bm:      bm,
-		keys:    bm.keys[indexNodeStart : indexNodeStart+bm.keys.numKeys()*2],
-		kidx:    0,
-		cidx:    -1,
-		bmHiIdx: -1,
+		bm:        bm,
+		keys:      bm.keys[indexNodeStart : indexNodeStart+bm.keys.numKeys()*2],
+		keyIdx:    0,
+		contIdx:   -1,
+		bitmapIdx: -1,
 	}
 }
 
@@ -68,41 +68,39 @@ func (it *Iterator) Next() uint64 {
 		return 0
 	}
 
-	// it.keys is a list of the form [key1, offset1, key2, offset2 ... ]
-	// the kidx'th key will be present at index 2*it.kidx and the offset corresponding to it will be
-	// ont index after after it.
-	key := it.keys[2*it.kidx]
-	off := it.keys[2*it.kidx+1]
+	key := it.keys[it.keyIdx]
+	off := it.keys[it.keyIdx+1]
 	cont := it.bm.getContainer(off)
 	card := getCardinality(cont)
 
 	// Loop until we find a container on which next operation is possible. When such a container
 	// is found, reset the variables responsible for container iteration.
-	for card == 0 || it.cidx+1 >= card {
-		if it.kidx+1 >= len(it.keys)/2 {
+	for card == 0 || it.contIdx+1 >= card {
+		if it.keyIdx+2 >= len(it.keys) {
 			return 0
 		}
-		it.kidx++
-		it.cidx = -1
-		it.bmHiIdx = -1
+		// jump by 2 because key is followed by a value
+		it.keyIdx += 2
+		it.contIdx = -1
+		it.bitmapIdx = -1
 		it.bitset = 0
-		key = it.keys[2*it.kidx]
-		off = it.keys[2*it.kidx+1]
+		key = it.keys[it.keyIdx]
+		off = it.keys[it.keyIdx+1]
 		cont = it.bm.getContainer(off)
 		card = getCardinality(cont)
 	}
 
 	//  The above loop assures that we can do next in this container.
-	it.cidx++
+	it.contIdx++
 	switch cont[indexType] {
 	case typeArray:
-		return key | uint64(cont[int(startIdx)+it.cidx])
+		return key | uint64(cont[int(startIdx)+it.contIdx])
 	case typeBitmap:
 		// A bitmap container is an array of uint16s.
 		// If the container is bitmap, go to the index which has a non-zero value.
-		for it.bitset == 0 && it.bmHiIdx+1 < len(cont[startIdx:]) {
-			it.bmHiIdx++
-			it.bitset = cont[int(startIdx)+it.bmHiIdx]
+		for it.bitset == 0 && it.bitmapIdx+1 < len(cont[startIdx:]) {
+			it.bitmapIdx++
+			it.bitset = cont[int(startIdx)+it.bitmapIdx]
 		}
 		assert(it.bitset > 0)
 
@@ -111,7 +109,7 @@ func (it *Iterator) Next() uint64 {
 		msbIdx := uint16(bits.LeadingZeros16(it.bitset))
 		msb := 1 << (16 - msbIdx - 1)
 		it.bitset ^= uint16(msb)
-		return key | uint64(it.bmHiIdx*16+int(msbIdx))
+		return key | uint64(it.bitmapIdx*16+int(msbIdx))
 	}
 	return 0
 }
