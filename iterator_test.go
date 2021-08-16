@@ -31,7 +31,7 @@ func TestIteratorBasic(t *testing.T) {
 		bm.Set(uint64(i))
 	}
 
-	it := bm.NewFastIterator()
+	it := bm.NewIterator()
 	for i := uint64(1); i <= n; i++ {
 		v := it.Next()
 		require.Equal(t, i, v)
@@ -52,7 +52,6 @@ func TestIteratorRanges(t *testing.T) {
 	for idx := 0; idx < 8; idx++ {
 		it := iters[idx]
 		for v := it.Next(); v > 0; v = it.Next() {
-			// t.Log(cnt, v)
 			require.Equal(t, cnt, v)
 			cnt++
 		}
@@ -81,7 +80,7 @@ func TestIteratorRandom(t *testing.T) {
 		return arr[i] < arr[j]
 	})
 
-	it := bm.NewFastIterator()
+	it := bm.NewIterator()
 	v := it.Next()
 	for i := uint64(0); i < uint64(len(arr)); i++ {
 		require.Equal(t, arr[i], v)
@@ -89,101 +88,54 @@ func TestIteratorRandom(t *testing.T) {
 	}
 }
 
-// func TestIteratorBasic(t *testing.T) {
-// 	testSz := []int{0, 1, 16, 2047, 2048, 1e4}
+func TestIteratorWithRemoveKeys(t *testing.T) {
+	b := NewBitmap()
+	N := uint64(1e6)
+	for i := uint64(0); i < N; i++ {
+		b.Set(i)
+	}
 
-// 	var sz int
-// 	test := func(t *testing.T) {
-// 		b := NewBitmap()
-// 		for i := uint64(0); i < uint64(sz); i++ {
-// 			b.Set(i)
-// 		}
-// 		it := b.NewIterator()
-// 		cnt := uint64(0)
-// 		for it.HasNext() {
-// 			require.Equal(t, cnt, it.Next())
-// 			cnt++
-// 		}
-// 		require.Equal(t, uint64(sz), cnt)
+	b.RemoveRange(0, N)
+	it := b.NewIterator()
 
-// 		rit := b.NewReverseIterator()
-// 		for rit.HasNext() {
-// 			cnt--
-// 			require.Equal(t, cnt, rit.Next())
-// 		}
-// 		require.Equal(t, uint64(0), cnt)
-// 	}
-// 	for i := range testSz {
-// 		sz = testSz[i]
-// 		t.Run(fmt.Sprintf("test-%d", sz), test)
-// 	}
+	cnt := 0
+	for it.Next() > 0 {
+		cnt++
+	}
+	require.Equal(t, 0, cnt)
+}
 
-// 	r := rand.New(rand.NewSource(0))
-// 	t.Run("test-random", func(t *testing.T) {
-// 		b := NewBitmap()
-// 		N := uint64(1e4)
-// 		for i := uint64(0); i < N; i++ {
-// 			b.Set(uint64(r.Int63n(math.MaxInt64)))
-// 		}
-// 		it := b.NewIterator()
-// 		var vals []uint64
-// 		for it.HasNext() {
-// 			vals = append(vals, it.Next())
-// 		}
-// 		require.Equal(t, b.ToArray(), vals)
-// 	})
-// }
+func TestManyIterator(t *testing.T) {
+	b := NewBitmap()
+	for i := 0; i < int(1e6); i++ {
+		b.Set(uint64(i))
+	}
 
-// func TestIteratorWithRemoveKeys(t *testing.T) {
-// 	b := NewBitmap()
-// 	N := uint64(1e6)
-// 	for i := uint64(0); i < N; i++ {
-// 		b.Set(i)
-// 	}
+	mi := b.ManyIterator()
+	buf := make([]uint64, 1000)
 
-// 	b.RemoveRange(0, N)
-// 	it := b.NewIterator()
+	i := 0
+	for {
+		got := mi.NextMany(buf)
+		if got == 0 {
+			break
+		}
+		require.Equal(t, 1000, got)
+		require.Equal(t, uint64(i*1000), buf[0])
+		i++
+	}
+}
 
-// 	cnt := 0
-// 	for it.HasNext() {
-// 		cnt++
-// 		it.Next()
-// 	}
-// 	require.Equal(t, 0, cnt)
-// }
+func BenchmarkIterator(b *testing.B) {
+	bm := NewBitmap()
+	for i := 0; i < int(1e5); i++ {
+		bm.Set(uint64(i))
+	}
 
-// func TestManyIterator(t *testing.T) {
-// 	b := NewBitmap()
-// 	for i := 0; i < int(1e6); i++ {
-// 		b.Set(uint64(i))
-// 	}
-
-// 	mi := b.ManyIterator()
-// 	buf := make([]uint64, 1000)
-
-// 	i := 0
-// 	for {
-// 		got := mi.NextMany(buf)
-// 		if got == 0 {
-// 			break
-// 		}
-// 		require.Equal(t, 1000, got)
-// 		require.Equal(t, uint64(i*1000), buf[0])
-// 		i++
-// 	}
-// }
-
-// func BenchmarkIterator(b *testing.B) {
-// 	bm := NewBitmap()
-// 	for i := 0; i < int(1e5); i++ {
-// 		bm.Set(uint64(i))
-// 	}
-
-// 	b.ResetTimer()
-// 	for i := 0; i < b.N; i++ {
-// 		it := bm.NewIterator()
-// 		for it.HasNext() {
-// 			it.Next()
-// 		}
-// 	}
-// }
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		it := bm.NewIterator()
+		for it.Next() > 0 {
+		}
+	}
+}

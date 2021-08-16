@@ -20,7 +20,7 @@ import (
 	"math/bits"
 )
 
-type FastIterator struct {
+type Iterator struct {
 	bm *Bitmap
 
 	keys []uint64
@@ -32,9 +32,9 @@ type FastIterator struct {
 	bitset  uint16
 }
 
-func (bm *Bitmap) NewRangeIterators(numRanges int) []*FastIterator {
+func (bm *Bitmap) NewRangeIterators(numRanges int) []*Iterator {
 	keyn := bm.keys.numKeys()
-	iters := make([]*FastIterator, numRanges)
+	iters := make([]*Iterator, numRanges)
 	width := keyn / numRanges
 	rem := keyn % numRanges
 	cnt := 0
@@ -42,7 +42,7 @@ func (bm *Bitmap) NewRangeIterators(numRanges int) []*FastIterator {
 	// This loop distributes the key equally to the ranges. For example: If numRanges = 3
 	// and keyn = 8 then it will be distributes as [3, 3, 2]
 	for i := 0; i < numRanges; i++ {
-		iters[i] = bm.NewFastIterator()
+		iters[i] = bm.NewIterator()
 		n := width
 		if i < rem {
 			n = width + 1
@@ -53,8 +53,8 @@ func (bm *Bitmap) NewRangeIterators(numRanges int) []*FastIterator {
 	return iters
 }
 
-func (bm *Bitmap) NewFastIterator() *FastIterator {
-	return &FastIterator{
+func (bm *Bitmap) NewIterator() *Iterator {
+	return &Iterator{
 		bm:      bm,
 		keys:    bm.keys[indexNodeStart : indexNodeStart+bm.keys.numKeys()*2],
 		kidx:    0,
@@ -63,7 +63,7 @@ func (bm *Bitmap) NewFastIterator() *FastIterator {
 	}
 }
 
-func (it *FastIterator) Next() uint64 {
+func (it *Iterator) Next() uint64 {
 	if len(it.keys) == 0 {
 		return 0
 	}
@@ -72,9 +72,6 @@ func (it *FastIterator) Next() uint64 {
 	cont := it.bm.getContainer(off)
 	card := getCardinality(cont)
 
-	// we need to jump container in these scenarios
-	// - The cardinality of this container is zero
-	// - cidx is already at the last element of the container
 	for card == 0 || it.cidx+1 >= card {
 		if it.kidx+1 >= len(it.keys)/2 {
 			return 0
@@ -113,6 +110,7 @@ type ManyItr struct {
 	arr   []uint64
 }
 
+// TODO: See if this is needed, we should remove this
 func (r *Bitmap) ManyIterator() *ManyItr {
 	return &ManyItr{
 		arr: r.ToArray(),
