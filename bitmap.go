@@ -74,10 +74,16 @@ func FromBufferWithCopy(data []byte) *Bitmap {
 }
 
 func (ra *Bitmap) ToBuffer() []byte {
+	if ra.IsEmpty() {
+		return nil
+	}
 	return toByteSlice(ra.data)
 }
 
 func (ra *Bitmap) ToBufferWithCopy() []byte {
+	if ra.IsEmpty() {
+		return nil
+	}
 	buf := make([]uint16, len(ra.data))
 	copy(buf, ra.data)
 	return toByteSlice(buf)
@@ -558,6 +564,9 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 }
 
 func (ra *Bitmap) GetCardinality() int {
+	if ra == nil {
+		return 0
+	}
 	N := ra.keys.numKeys()
 	var sz int
 	for i := 0; i < N; i++ {
