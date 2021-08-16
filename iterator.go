@@ -28,7 +28,7 @@ type Iterator struct {
 
 	cidx int
 
-	bmHiIdx int
+	bmHiIdx int // the index of current uint16 in the bitmap container, which is a list of uint16s
 	bitset  uint16
 }
 
@@ -67,11 +67,17 @@ func (it *Iterator) Next() uint64 {
 	if len(it.keys) == 0 {
 		return 0
 	}
+
+	// it.keys is a list of the form [key1, offset1, key2, offset2 ... ]
+	// the kidx'th key will be present at index 2*it.kidx and the offset corresponding to it will be
+	// ont index after after it.
 	key := it.keys[2*it.kidx]
 	off := it.keys[2*it.kidx+1]
 	cont := it.bm.getContainer(off)
 	card := getCardinality(cont)
 
+	// Loop until we find a container on which next operation is possible. When such a container
+	// is found, reset the variables responsible for container iteration.
 	for card == 0 || it.cidx+1 >= card {
 		if it.kidx+1 >= len(it.keys)/2 {
 			return 0
@@ -86,21 +92,26 @@ func (it *Iterator) Next() uint64 {
 		card = getCardinality(cont)
 	}
 
-	//  The above loop assures that we can do next in this container
+	//  The above loop assures that we can do next in this container.
 	it.cidx++
 	switch cont[indexType] {
 	case typeArray:
 		return key | uint64(cont[int(startIdx)+it.cidx])
 	case typeBitmap:
+		// A bitmap container is an array of uint16s.
+		// If the container is bitmap, go to the index which has a non-zero value.
 		for it.bitset == 0 && it.bmHiIdx+1 < len(cont[startIdx:]) {
 			it.bmHiIdx++
 			it.bitset = cont[int(startIdx)+it.bmHiIdx]
 		}
 		assert(it.bitset > 0)
-		loIdx := uint16(bits.LeadingZeros16(it.bitset))
-		msb := 1 << (16 - loIdx - 1)
+
+		// msbIdx is the index of most-significant bit. In this iteration we choose this set bit
+		// and make it zero.
+		msbIdx := uint16(bits.LeadingZeros16(it.bitset))
+		msb := 1 << (16 - msbIdx - 1)
 		it.bitset ^= uint16(msb)
-		return key | uint64(it.bmHiIdx*16+int(loIdx))
+		return key | uint64(it.bmHiIdx*16+int(msbIdx))
 	}
 	return 0
 }
