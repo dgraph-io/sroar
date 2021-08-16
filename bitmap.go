@@ -578,6 +578,9 @@ func (ra *Bitmap) GetCardinality() int {
 }
 
 func (ra *Bitmap) ToArray() []uint64 {
+	if ra == nil {
+		return nil
+	}
 	var res []uint64
 	N := ra.keys.numKeys()
 	for i := 0; i < N; i++ {

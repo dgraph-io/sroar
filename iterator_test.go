@@ -17,57 +17,75 @@
 package sroar
 
 import (
-	"fmt"
-	"math"
 	"math/rand"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestIteratorBasic(t *testing.T) {
-	testSz := []int{0, 1, 16, 2047, 2048, 1e4}
+	n := uint64(1e5)
+	bm := NewBitmap()
+	for i := uint64(1); i <= n; i++ {
+		bm.Set(uint64(i))
+	}
 
-	var sz int
-	test := func(t *testing.T) {
-		b := NewBitmap()
-		for i := uint64(0); i < uint64(sz); i++ {
-			b.Set(i)
-		}
-		it := b.NewIterator()
-		cnt := uint64(0)
-		for it.HasNext() {
-			require.Equal(t, cnt, it.Next())
+	it := bm.NewIterator()
+	for i := uint64(1); i <= n; i++ {
+		v := it.Next()
+		require.Equal(t, i, v)
+	}
+	v := it.Next()
+	require.Equal(t, uint64(0), v)
+}
+
+func TestIteratorRanges(t *testing.T) {
+	n := uint64(1e5)
+	bm := NewBitmap()
+	for i := uint64(1); i <= n; i++ {
+		bm.Set(uint64(i))
+	}
+
+	iters := bm.NewRangeIterators(8)
+	cnt := uint64(1)
+	for idx := 0; idx < 8; idx++ {
+		it := iters[idx]
+		for v := it.Next(); v > 0; v = it.Next() {
+			require.Equal(t, cnt, v)
 			cnt++
 		}
-		require.Equal(t, uint64(sz), cnt)
-
-		rit := b.NewReverseIterator()
-		for rit.HasNext() {
-			cnt--
-			require.Equal(t, cnt, rit.Next())
-		}
-		require.Equal(t, uint64(0), cnt)
 	}
-	for i := range testSz {
-		sz = testSz[i]
-		t.Run(fmt.Sprintf("test-%d", sz), test)
+}
+
+func TestIteratorRandom(t *testing.T) {
+	n := uint64(1e6)
+	bm := NewBitmap()
+	mp := make(map[uint64]struct{})
+	var arr []uint64
+	for i := uint64(1); i <= n; i++ {
+		v := uint64(rand.Intn(int(n) * 5))
+		if v == 0 {
+			continue
+		}
+		if _, ok := mp[v]; ok {
+			continue
+		}
+		mp[v] = struct{}{}
+		arr = append(arr, v)
+		bm.Set(uint64(v))
 	}
 
-	r := rand.New(rand.NewSource(0))
-	t.Run("test-random", func(t *testing.T) {
-		b := NewBitmap()
-		N := uint64(1e4)
-		for i := uint64(0); i < N; i++ {
-			b.Set(uint64(r.Int63n(math.MaxInt64)))
-		}
-		it := b.NewIterator()
-		var vals []uint64
-		for it.HasNext() {
-			vals = append(vals, it.Next())
-		}
-		require.Equal(t, b.ToArray(), vals)
+	sort.Slice(arr, func(i, j int) bool {
+		return arr[i] < arr[j]
 	})
+
+	it := bm.NewIterator()
+	v := it.Next()
+	for i := uint64(0); i < uint64(len(arr)); i++ {
+		require.Equal(t, arr[i], v)
+		v = it.Next()
+	}
 }
 
 func TestIteratorWithRemoveKeys(t *testing.T) {
@@ -81,9 +99,8 @@ func TestIteratorWithRemoveKeys(t *testing.T) {
 	it := b.NewIterator()
 
 	cnt := 0
-	for it.HasNext() {
+	for it.Next() > 0 {
 		cnt++
-		it.Next()
 	}
 	require.Equal(t, 0, cnt)
 }
@@ -118,8 +135,7 @@ func BenchmarkIterator(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		it := bm.NewIterator()
-		for it.HasNext() {
-			it.Next()
+		for it.Next() > 0 {
 		}
 	}
 }
