@@ -932,12 +932,11 @@ func (ra *Bitmap) Rank(x uint64) int {
 	if !has {
 		return -1
 	}
-
-	var rank int
-	y := uint16(x)
 	c := ra.getContainer(offset)
+	y := uint16(x)
 
-	// Add the rank within the container
+	// Find the rank within the container
+	var rank int
 	switch c[indexType] {
 	case typeArray:
 		rank = array(c).rank(y)
