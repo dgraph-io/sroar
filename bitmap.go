@@ -926,6 +926,40 @@ func Or(a, b *Bitmap) *Bitmap {
 	return res
 }
 
+func (ra *Bitmap) Rank(x uint64) int {
+	key := x & mask
+	offset, has := ra.keys.getValue(key)
+	if !has {
+		return -1
+	}
+
+	var rank int
+	y := uint16(x)
+	c := ra.getContainer(offset)
+
+	// Add the rank within the container
+	switch c[indexType] {
+	case typeArray:
+		rank = array(c).rank(y)
+	case typeBitmap:
+		rank = bitmap(c).rank(y)
+	}
+	if rank < 0 {
+		return -1
+	}
+
+	// Add up cardinalities of all the containers on the left of container containing x.
+	n := ra.keys.numKeys()
+	for i := 0; i < n; i++ {
+		if ra.keys.key(i) == key {
+			break
+		}
+		cont := ra.getContainer(ra.keys.val(i))
+		rank += getCardinality(cont)
+	}
+	return rank
+}
+
 func (ra *Bitmap) Cleanup() {
 	for idx := 1; idx < ra.keys.numKeys(); {
 		off := ra.keys.val(idx)
