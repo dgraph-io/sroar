@@ -654,5 +654,38 @@ func TestCleanup(t *testing.T) {
 	for i := 65536; i < n; i++ {
 		require.Falsef(t, a.Contains(uint64(i)), "idx: %d", i)
 	}
+}
 
+func TestRank(t *testing.T) {
+	a := NewBitmap()
+	n := int(1e6)
+	for i := uint64(0); i < uint64(n); i++ {
+		a.Set(i)
+	}
+	for i := 0; i < n; i++ {
+		require.Equal(t, i, a.Rank(uint64(i)))
+	}
+	require.Equal(t, -1, a.Rank(uint64(n)))
+
+	// Check ranks after removing an element.
+	a.Remove(100)
+	for i := 0; i < n; i++ {
+		if i < 100 {
+			require.Equal(t, i, a.Rank(uint64(i)))
+		} else if i == 100 {
+			require.Equal(t, -1, a.Rank(uint64(i)))
+		} else {
+			require.Equal(t, i-1, a.Rank(uint64(i)))
+		}
+	}
+
+	// Check ranks after removing a range of elements.
+	a.RemoveRange(0, uint64(1e4))
+	for i := 0; i < n; i++ {
+		if i < 1e4 {
+			require.Equal(t, -1, a.Rank(uint64(n)))
+		} else {
+			require.Equal(t, i-1e4, a.Rank(uint64(i)))
+		}
+	}
 }

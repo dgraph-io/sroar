@@ -464,6 +464,9 @@ func (ra *Bitmap) Select(x uint64) (uint64, error) {
 }
 
 func (ra *Bitmap) Contains(x uint64) bool {
+	if ra == nil {
+		return false
+	}
 	key := x & mask
 	offset, has := ra.keys.getValue(key)
 	if !has {
@@ -484,6 +487,9 @@ func (ra *Bitmap) Contains(x uint64) bool {
 }
 
 func (ra *Bitmap) Remove(x uint64) bool {
+	if ra == nil {
+		return false
+	}
 	key := x & mask
 	offset, has := ra.keys.getValue(key)
 	if !has {
@@ -561,6 +567,17 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	}
 
 	ra.Cleanup()
+}
+
+func (ra *Bitmap) Reset() {
+	// reset ra.data to size enough for one container and corresponding key.
+	// 2 u64 is needed for header and another 2 u16 for the key 0.
+	ra.data = ra.data[:16+minContainerSize]
+	ra.keys = toUint64Slice(ra.data)
+
+	offset := ra.newContainer(minContainerSize)
+	ra.keys.setAt(indexNodeStart+1, offset)
+	ra.keys.setNumKeys(1)
 }
 
 func (ra *Bitmap) GetCardinality() int {
@@ -715,6 +732,11 @@ func (ra *Bitmap) extreme(dir int) uint64 {
 }
 
 func (ra *Bitmap) And(bm *Bitmap) {
+	if bm == nil {
+		ra.Reset()
+		return
+	}
+
 	a, b := ra, bm
 	ai, an := 0, a.keys.numKeys()
 	bi, bn := 0, b.keys.numKeys()
@@ -787,6 +809,9 @@ func And(a, b *Bitmap) *Bitmap {
 }
 
 func (ra *Bitmap) AndNot(bm *Bitmap) {
+	if bm == nil {
+		return
+	}
 	a, b := ra, bm
 	var ai, bi int
 
@@ -839,6 +864,9 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 
 // TODO: Check if we want to use lazyMode
 func (dst *Bitmap) Or(src *Bitmap) {
+	if src == nil {
+		return
+	}
 	dst.or(src, runInline)
 }
 
@@ -924,6 +952,39 @@ func Or(a, b *Bitmap) *Bitmap {
 		bi++
 	}
 	return res
+}
+
+func (ra *Bitmap) Rank(x uint64) int {
+	key := x & mask
+	offset, has := ra.keys.getValue(key)
+	if !has {
+		return -1
+	}
+	c := ra.getContainer(offset)
+	y := uint16(x)
+
+	// Find the rank within the container
+	var rank int
+	switch c[indexType] {
+	case typeArray:
+		rank = array(c).rank(y)
+	case typeBitmap:
+		rank = bitmap(c).rank(y)
+	}
+	if rank < 0 {
+		return -1
+	}
+
+	// Add up cardinalities of all the containers on the left of container containing x.
+	n := ra.keys.numKeys()
+	for i := 0; i < n; i++ {
+		if ra.keys.key(i) == key {
+			break
+		}
+		cont := ra.getContainer(ra.keys.val(i))
+		rank += getCardinality(cont)
+	}
+	return rank
 }
 
 func (ra *Bitmap) Cleanup() {
