@@ -654,5 +654,18 @@ func TestCleanup(t *testing.T) {
 	for i := 65536; i < n; i++ {
 		require.Falsef(t, a.Contains(uint64(i)), "idx: %d", i)
 	}
+}
+
+func TestIsEmpty(t *testing.T) {
+	a := NewBitmap()
+	require.True(t, a.IsEmpty())
+
+	n := int(1e6)
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i))
+	}
+	require.False(t, a.IsEmpty())
+	a.RemoveRange(0, math.MaxUint64)
+	require.True(t, a.IsEmpty())
 
 }

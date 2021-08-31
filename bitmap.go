@@ -354,7 +354,15 @@ func (ra *Bitmap) IsEmpty() bool {
 	if ra == nil {
 		return true
 	}
-	return ra.GetCardinality() == 0
+	N := ra.keys.numKeys()
+	for i := 0; i < N; i++ {
+		offset := ra.keys.val(i)
+		cont := ra.getContainer(offset)
+		if c := getCardinality(cont); c > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (ra *Bitmap) Set(x uint64) bool {
