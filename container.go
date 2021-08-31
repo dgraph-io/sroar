@@ -123,6 +123,16 @@ func (c array) find(x uint16) int {
 	}
 	return N
 }
+
+func (c array) rank(x uint16) int {
+	N := getCardinality(c)
+	idx := c.find(x)
+	if idx == N {
+		return -1
+	}
+	return idx
+}
+
 func (c array) has(x uint16) bool {
 	N := getCardinality(c)
 	idx := c.find(x)
@@ -441,13 +451,32 @@ func (b bitmap) has(x uint16) bool {
 	return has > 0
 }
 
+func (b bitmap) rank(x uint16) int {
+	idx := x >> 4
+	pos := x & 0xF
+	if b[startIdx+idx]&bitmapMask[pos] == 0 {
+		return -1
+	}
+
+	var rank int
+	for i := 0; i < int(idx); i++ {
+		rank += bits.OnesCount16(b[int(startIdx)+i])
+	}
+	for p := uint16(0); p <= pos; p++ {
+		if b[startIdx+idx]&bitmapMask[p] > 0 {
+			rank++
+		}
+	}
+	return rank - 1
+}
+
 // TODO: This can perhaps be using SIMD instructions.
 func (b bitmap) andBitmap(other bitmap) []uint16 {
 	out := make([]uint16, maxContainerSize)
 	out[indexSize] = maxContainerSize
 	out[indexType] = typeBitmap
 	var num int
-	for i := 4; i < len(b); i++ {
+	for i := int(startIdx); i < len(b); i++ {
 		out[i] = b[i] & other[i]
 		num += bits.OnesCount16(out[i])
 	}
