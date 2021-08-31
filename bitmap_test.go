@@ -656,6 +656,19 @@ func TestCleanup(t *testing.T) {
 	}
 }
 
+func TestIsEmpty(t *testing.T) {
+	a := NewBitmap()
+	require.True(t, a.IsEmpty())
+
+	n := int(1e6)
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i))
+	}
+	require.False(t, a.IsEmpty())
+	a.RemoveRange(0, math.MaxUint64)
+	require.True(t, a.IsEmpty())
+}
+
 func TestRank(t *testing.T) {
 	a := NewBitmap()
 	n := int(1e6)
