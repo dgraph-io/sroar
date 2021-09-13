@@ -364,18 +364,24 @@ func TestSetGet(t *testing.T) {
 }
 
 func TestSetSorted(t *testing.T) {
-	N := int(1e6)
-	var arr []uint64
-	for i := 0; i < N; i++ {
-		arr = append(arr, uint64(i))
-	}
-	r := FromSortedList(arr)
-	require.Equal(t, len(arr), r.GetCardinality())
+	check := func(n int) {
+		var arr []uint64
+		for i := 0; i < n; i++ {
+			arr = append(arr, uint64(i))
+		}
+		r := FromSortedList(arr)
+		require.Equal(t, len(arr), r.GetCardinality())
 
-	rarr := r.ToArray()
-	for i := 0; i < N; i++ {
-		require.Equal(t, uint64(i), rarr[i])
+		rarr := r.ToArray()
+		for i := 0; i < n; i++ {
+			require.Equal(t, uint64(i), rarr[i])
+		}
+
+		r.Set(uint64(n))
+		require.True(t, r.Contains(uint64(n)))
 	}
+	check(10)
+	check(1e6)
 }
 
 func TestAnd(t *testing.T) {
