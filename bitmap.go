@@ -389,6 +389,15 @@ func FromSortedList(vals []uint64) *Bitmap {
 	var hi, lastHi, off uint64
 
 	ra := NewBitmap()
+	// Set the keys beforehand so that we don't need to move a lot of memory because of adding keys.
+	for _, x := range vals {
+		hi = x & mask
+		if hi != 0 && hi != lastHi {
+			ra.setKey(lastHi, 0)
+		}
+		lastHi = hi
+	}
+
 	finalize := func(l []uint16, key uint64) {
 		if len(l) == 0 {
 			return
@@ -416,6 +425,8 @@ func FromSortedList(vals []uint64) *Bitmap {
 		ra.setKey(key, off)
 		return
 	}
+
+	lastHi = 0
 	for _, x := range vals {
 		hi = x & mask
 		// Finalize the last container before proceeding ahead
