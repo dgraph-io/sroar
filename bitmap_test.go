@@ -1,6 +1,7 @@
 package sroar
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"testing"
@@ -423,6 +424,24 @@ func TestAndNot(t *testing.T) {
 	require.Equal(t, N, a.GetCardinality())
 	a.AndNot(b)
 	require.Equal(t, N/2, a.GetCardinality())
+}
+
+func TestAndNotBroken(t *testing.T) {
+	a := NewBitmap()
+	b := NewBitmap()
+
+	a.SetMany([]uint64{22, 40, 45, 56})
+	b.SetMany([]uint64{7, 8, 9, 14, 15, 16, 17, 19, 20, 21, 22, 29, 30, 31, 63, 64})
+
+	a.AndNot(b) // BROKEN! [7 8 9 14 15 16 17 19 20 21 29 30 31 40 45 56 63 64]
+
+	// This is a fix...
+	//for _, v := range b.ToArray() {
+	//	a.Remove(v)
+	//}
+
+	fmt.Println(a.ToArray())
+	require.Equal(t, []uint64{40, 45, 56}, a.ToArray())
 }
 
 func TestOr(t *testing.T) {
