@@ -234,23 +234,12 @@ func (c array) andArray(other array) []uint16 {
 }
 
 func (c array) andNotArray(other array, buf []uint16) []uint16 {
-	var setOr []uint16
-	var setAnd []uint16
-
-	max := getCardinality(c) + getCardinality(other)
-	orRes := c.orArray(other, buf, 0)
-
-	// orArray can result in bitmap.
-	if orRes[indexType] == typeBitmap {
-		setOr = bitmap(orRes).all()
-	} else {
-		setOr = array(orRes).all()
-	}
-	andRes := array(c.andArray(other))
-	setAnd = andRes.all()
-
+	max := getCardinality(c)
 	out := make([]uint16, int(startIdx)+max+1)
-	num := uint16(difference(setOr, setAnd, out[startIdx:]))
+
+	andRes := array(c.andArray(other)).all()
+	srcVals := array(c).all()
+	num := uint16(difference(srcVals, andRes, out[startIdx:]))
 
 	// Truncate out to how many values were found.
 	out = out[:startIdx+num+1]
@@ -528,7 +517,7 @@ func (b bitmap) andNotBitmap(other bitmap, buf []uint16) []uint16 {
 	var num int
 	data := buf[startIdx:]
 	for i, v := range other[startIdx:] {
-		data[i] = (data[i] | v) ^ (data[i] & v)
+		data[i] = data[i] ^ (data[i] & v)
 		num += bits.OnesCount16(data[i])
 	}
 	setCardinality(buf, num)

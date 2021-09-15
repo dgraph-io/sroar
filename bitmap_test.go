@@ -404,19 +404,26 @@ func TestAndNot(t *testing.T) {
 
 	N := int(1e7)
 	for i := 0; i < N; i++ {
+		a.Set(uint64(i))
 		if i < N/2 {
-			a.Set(uint64(i))
-		} else {
 			b.Set(uint64(i))
 		}
 	}
-	require.Equal(t, N/2, a.GetCardinality())
+	require.Equal(t, N, a.GetCardinality())
 	require.Equal(t, N/2, b.GetCardinality())
 
 	a.AndNot(b)
-	require.Equal(t, N, a.GetCardinality())
-	a.AndNot(b)
 	require.Equal(t, N/2, a.GetCardinality())
+
+	// Test for case when only array container will be generated.
+	a = NewBitmap()
+	b = NewBitmap()
+
+	a.SetMany([]uint64{22, 40, 45, 56})
+	b.SetMany([]uint64{7, 8, 9, 14, 15, 16, 17, 19, 20, 21, 22, 29, 30, 31, 63, 64})
+
+	a.AndNot(b)
+	require.Equal(t, []uint64{40, 45, 56}, a.ToArray())
 }
 
 func TestOr(t *testing.T) {
