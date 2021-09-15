@@ -808,6 +808,7 @@ func And(a, b *Bitmap) *Bitmap {
 	return res
 }
 
+// TODO: Do the operations in-place, it will avoid memory moves.
 func (ra *Bitmap) AndNot(bm *Bitmap) {
 	if bm == nil {
 		return

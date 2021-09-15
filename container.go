@@ -233,6 +233,7 @@ func (c array) andArray(other array) []uint16 {
 	return out
 }
 
+// TODO: We can do this operation in-place on the src array.
 func (c array) andNotArray(other array, buf []uint16) []uint16 {
 	max := getCardinality(c)
 	out := make([]uint16, int(startIdx)+max+1)
