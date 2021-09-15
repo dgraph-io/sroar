@@ -847,39 +847,22 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 			off = b.keys.val(bi)
 			bc := b.getContainer(off)
 
-			// do the intersection
+			// TODO: See if we can do containerAndNot operation in-place.
 			c := containerAndNot(ac, bc, buf)
-
 			// create a new container and update the key offset to this container.
 			offset := a.newContainer(uint16(len(c)))
 			copy(a.data[offset:], c)
 			a.setKey(ak, offset)
-			bi++
-		} else if ak > bk {
-			// ak > bk
-			// need to add this b container to a
-			bk := b.keys.key(bi)
-			off := b.keys.val(bi)
-			bc := b.getContainer(off)
 
-			offset := a.newContainer(uint16(len(bc)))
-			copy(a.data[offset:], bc)
-			a.setKey(bk, offset)
+			ai++
 			bi++
+			continue
 		}
-		ai++
-	}
-
-	// pick up all the keys left in b.
-	for bi < b.keys.numKeys() {
-		bk := b.keys.key(bi)
-		off := b.keys.val(bi)
-		bc := b.getContainer(off)
-
-		offset := a.newContainer(uint16(len(bc)))
-		copy(a.data[offset:], bc)
-		a.setKey(bk, offset)
-		bi++
+		if ak > bk {
+			bi++
+		} else {
+			ai++
+		}
 	}
 }
 

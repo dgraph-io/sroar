@@ -410,19 +410,45 @@ func TestAndNot(t *testing.T) {
 
 	N := int(1e7)
 	for i := 0; i < N; i++ {
+		a.Set(uint64(i))
 		if i < N/2 {
-			a.Set(uint64(i))
-		} else {
 			b.Set(uint64(i))
 		}
 	}
-	require.Equal(t, N/2, a.GetCardinality())
+	require.Equal(t, N, a.GetCardinality())
 	require.Equal(t, N/2, b.GetCardinality())
 
 	a.AndNot(b)
-	require.Equal(t, N, a.GetCardinality())
-	a.AndNot(b)
 	require.Equal(t, N/2, a.GetCardinality())
+
+	// Test for case when array container will be generated.
+	a = NewBitmap()
+	b = NewBitmap()
+
+	a.SetMany([]uint64{1, 2, 3, 4})
+	b.SetMany([]uint64{3, 4, 5, 6})
+
+	a.AndNot(b)
+	require.Equal(t, []uint64{1, 2}, a.ToArray())
+
+	// Test for case when bitmap container will be generated.
+	a = NewBitmap()
+	b = NewBitmap()
+	for i := 0; i < 10000; i++ {
+		a.Set(uint64(i))
+		if i < 7000 {
+			b.Set(uint64(i))
+		}
+	}
+	a.AndNot(b)
+	require.Equal(t, 3000, a.GetCardinality())
+	for i := 0; i < 10000; i++ {
+		if i < 7000 {
+			require.False(t, a.Contains(uint64(i)))
+		} else {
+			require.True(t, a.Contains(uint64(i)))
+		}
+	}
 }
 
 func TestOr(t *testing.T) {
