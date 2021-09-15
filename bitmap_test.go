@@ -421,15 +421,34 @@ func TestAndNot(t *testing.T) {
 	a.AndNot(b)
 	require.Equal(t, N/2, a.GetCardinality())
 
-	// Test for case when only array container will be generated.
+	// Test for case when array container will be generated.
 	a = NewBitmap()
 	b = NewBitmap()
 
-	a.SetMany([]uint64{22, 40, 45, 56})
-	b.SetMany([]uint64{7, 8, 9, 14, 15, 16, 17, 19, 20, 21, 22, 29, 30, 31, 63, 64})
+	a.SetMany([]uint64{1, 2, 3, 4})
+	b.SetMany([]uint64{3, 4, 5, 6})
 
 	a.AndNot(b)
-	require.Equal(t, []uint64{40, 45, 56}, a.ToArray())
+	require.Equal(t, []uint64{1, 2}, a.ToArray())
+
+	// Test for case when bitmap container will be generated.
+	a = NewBitmap()
+	b = NewBitmap()
+	for i := 0; i < 10000; i++ {
+		a.Set(uint64(i))
+		if i < 7000 {
+			b.Set(uint64(i))
+		}
+	}
+	a.AndNot(b)
+	require.Equal(t, 3000, a.GetCardinality())
+	for i := 0; i < 10000; i++ {
+		if i < 7000 {
+			require.False(t, a.Contains(uint64(i)))
+		} else {
+			require.True(t, a.Contains(uint64(i)))
+		}
+	}
 }
 
 func TestOr(t *testing.T) {
