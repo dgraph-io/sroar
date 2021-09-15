@@ -829,7 +829,6 @@ func And(a, b *Bitmap) *Bitmap {
 	return res
 }
 
-// TODO: Do the operations in-place, it will avoid memory moves.
 func (ra *Bitmap) AndNot(bm *Bitmap) {
 	if bm == nil {
 		return
@@ -848,9 +847,8 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 			off = b.keys.val(bi)
 			bc := b.getContainer(off)
 
-			// do the intersection
+			// TODO: See if we can do containerAndNot operation in-place.
 			c := containerAndNot(ac, bc, buf)
-
 			// create a new container and update the key offset to this container.
 			offset := a.newContainer(uint16(len(c)))
 			copy(a.data[offset:], c)
