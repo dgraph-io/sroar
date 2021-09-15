@@ -837,11 +837,11 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 
 			ai++
 			bi++
+			continue
 		}
 		if ak > bk {
 			bi++
-		}
-		if ak < bk {
+		} else {
 			ai++
 		}
 	}
