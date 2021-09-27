@@ -47,7 +47,7 @@ func FromBuffer(data []byte) *Bitmap {
 		return NewBitmap()
 	}
 	du := toUint16Slice(data)
-	x := toUint64Slice(du[:4])[0]
+	x := toUint64Slice(du[:4])[indexNodeSize]
 	return &Bitmap{
 		data: du,
 		_ptr: data,
@@ -64,7 +64,7 @@ func FromBufferWithCopy(data []byte) *Bitmap {
 	dup := make([]byte, len(data))
 	copy(dup, data)
 	du := toUint16Slice(dup)
-	x := toUint64Slice(du[:4])[0]
+	x := toUint64Slice(du[:4])[indexNodeSize]
 
 	return &Bitmap{
 		data: du,
@@ -136,7 +136,7 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 
 	ra.scootRight(curSize, uint16(bySize))
 	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
-	ra.keys.setAt(0, uint64(curSize+bySize))
+	ra.keys.setAt(indexNodeSize, uint64(curSize+bySize))
 
 	// All containers have moved to the right by bySize bytes.
 	// Update their offsets.
@@ -199,6 +199,9 @@ func (ra *Bitmap) removeKey(idx int) {
 	off := uint64(4 * keyOffset(idx))
 	// remove 8 u16s, which corresponds to a key and value (two u64s)
 	ra.scootLeft(off, 8)
+	curSize := uint64(len(ra.keys) * 4)
+	assert(curSize >= 8)
+	ra.keys.setAt(indexNodeSize, uint64(curSize-8))
 	ra.keys.updateOffsets(off, 8, false)
 	ra.keys.setNumKeys(ra.keys.numKeys() - 1)
 }
