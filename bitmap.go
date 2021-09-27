@@ -204,6 +204,7 @@ func (ra *Bitmap) removeKey(idx int) {
 	ra.keys.setAt(indexNodeSize, uint64(curSize-8))
 	ra.keys.updateOffsets(off, 8, false)
 	ra.keys.setNumKeys(ra.keys.numKeys() - 1)
+	ra.keys = ra.keys[:(curSize-8)/4]
 }
 
 func (ra *Bitmap) removeContainer(off uint64) {
