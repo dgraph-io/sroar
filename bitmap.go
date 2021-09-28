@@ -19,6 +19,7 @@ package sroar
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 
@@ -991,15 +992,45 @@ func (ra *Bitmap) Rank(x uint64) int {
 }
 
 func (ra *Bitmap) Cleanup() {
+	type interval struct {
+		start uint64
+		end   uint64
+	}
+
+	intervals := []interval{}
 	for idx := 1; idx < ra.keys.numKeys(); {
 		off := ra.keys.val(idx)
 		cont := ra.getContainer(off)
 		if getCardinality(cont) == 0 {
-			ra.removeContainer(off)
+			intervals = append(intervals, interval{off, off + uint64(cont[indexSize])})
+			// ra.removeContainer(off)
 			ra.removeKey(idx)
 			continue
 		}
 		idx++
+	}
+
+	if len(intervals) == 0 {
+		return
+	}
+
+	sort.Slice(intervals, func(i, j int) bool { return intervals[i].start < intervals[j].start })
+
+	merged := []interval{intervals[0]}
+	for _, ir := range intervals[1:] {
+		last := merged[len(merged)-1]
+		if ir.start == last.end {
+			last.end = ir.end
+			merged[len(merged)-1] = last
+			continue
+		}
+		merged = append(merged, ir)
+	}
+
+	for _, ir := range merged {
+		sz := ir.end - ir.start
+		ra.scootLeft(ir.start, sz)
+		ra.keys.updateOffsets(ir.start, sz, false)
 	}
 }
 
