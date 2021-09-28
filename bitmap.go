@@ -657,21 +657,21 @@ func (ra *Bitmap) String() string {
 
 	var usedSize, card int
 	usedSize += 4 * (ra.keys.numKeys())
-	for i := 0; i < ra.keys.numKeys(); i++ {
-		k := ra.keys.key(i)
-		v := ra.keys.val(i)
-		c := ra.getContainer(v)
+	// for i := 0; i < ra.keys.numKeys(); i++ {
+	// 	k := ra.keys.key(i)
+	// 	v := ra.keys.val(i)
+	// 	c := ra.getContainer(v)
 
-		sz := c[indexSize]
-		usedSize += int(sz)
-		card += getCardinality(c)
+	// 	sz := c[indexSize]
+	// 	usedSize += int(sz)
+	// 	card += getCardinality(c)
 
-		b.WriteString(fmt.Sprintf(
-			"[%03d] Key: %#8x. Offset: %7d. Size: %4d. Type: %d. Card: %6d. Uint16/Uid: %.2f\n",
-			i, k, v, sz, c[indexType], getCardinality(c), float64(sz)/float64(getCardinality(c))))
-	}
-	b.WriteString(fmt.Sprintf("Number of containers: %d. Cardinality: %d\n",
-		ra.keys.numKeys(), card))
+	// 	b.WriteString(fmt.Sprintf(
+	// 		"[%03d] Key: %#8x. Offset: %7d. Size: %4d. Type: %d. Card: %6d. Uint16/Uid: %.2f\n",
+	// 		i, k, v, sz, c[indexType], getCardinality(c), float64(sz)/float64(getCardinality(c))))
+	// }
+	b.WriteString(fmt.Sprintf("Number of containers: %d. Cardinality: %d nodeSz: %d len(ra.keys): %d\n",
+		ra.keys.numKeys(), card, ra.keys[indexNodeSize], len(ra.keys)*4))
 
 	amp := float64(len(ra.data)-usedSize) / float64(usedSize)
 	b.WriteString(fmt.Sprintf(
@@ -1010,6 +1010,14 @@ func (ra *Bitmap) Cleanup() {
 		}
 		idx++
 	}
+}
+
+func (ra *Bitmap) Verify() error {
+	if ra.keys[indexNodeSize] != uint64(len(ra.keys)*4) {
+		return errors.Errorf("indexNodeSize: %d, len(ra.keys)*4: %d\n", ra.keys[indexNodeSize],
+			len(ra.keys)*4)
+	}
+	return nil
 }
 
 func FastAnd(bitmaps ...*Bitmap) *Bitmap {
