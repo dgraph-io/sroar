@@ -195,16 +195,20 @@ func (ra *Bitmap) scootLeft(offset uint64, size uint64) {
 	ra.data = ra.data[:n-size]
 }
 
+// TODO: We should avoid removing key.
 func (ra *Bitmap) removeKey(idx int) {
 	off := uint64(4 * keyOffset(idx))
 	// remove 8 u16s, which corresponds to a key and value (two u64s)
 	ra.scootLeft(off, 8)
-	curSize := uint64(len(ra.keys) * 4)
+
+	// update the total size of the key nodes, this size is used in FromBuffer.
+	curSize := uint64(len(ra.keys) * 4) // x4 because size is in u16s and ra.keys is u64s.
 	assert(curSize >= 8)
 	ra.keys.setAt(indexNodeSize, uint64(curSize-8))
-	ra.keys.updateOffsets(off, 8, false)
+	ra.keys = ra.keys[:(curSize-8)/4] // divide by 4 because ra.keys is u64s.
+
 	ra.keys.setNumKeys(ra.keys.numKeys() - 1)
-	ra.keys = ra.keys[:(curSize-8)/4]
+	ra.keys.updateOffsets(off, 8, false)
 }
 
 func (ra *Bitmap) removeContainer(off uint64) {
