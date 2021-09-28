@@ -131,7 +131,7 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	curSize := uint64(len(ra.keys) * 4) // Multiply by 4 for U64 -> U16.
 	bySize := curSize
 	if bySize > math.MaxUint16 {
-		bySize = math.MaxInt16
+		bySize = math.MaxUint16
 	}
 
 	ra.scootRight(curSize, uint16(bySize))
