@@ -21,7 +21,7 @@ func valOffset(i int) int { return indexNodeStart + 1 + 2*i }
 
 func (n node) numKeys() int        { return int(n[indexNumKeys]) }
 func (n node) size() int           { return int(n[indexNodeSize]) }
-func (n node) maxKeys() int        { return (cap(n) - indexNodeStart) / 2 }
+func (n node) maxKeys() int        { return (len(n) - indexNodeStart) / 2 }
 func (n node) key(i int) uint64    { return n[keyOffset(i)] }
 func (n node) val(i int) uint64    { return n[valOffset(i)] }
 func (n node) data(i int) []uint64 { return n[keyOffset(i):keyOffset(i+1)] }
