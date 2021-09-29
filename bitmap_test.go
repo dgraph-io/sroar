@@ -703,6 +703,52 @@ func TestCleanup(t *testing.T) {
 	require.Equal(t, n/2, b.GetCardinality())
 }
 
+func TestCleanup2(t *testing.T) {
+	a := NewBitmap()
+	n := 10
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i * (1 << 16)))
+	}
+	require.Equal(t, n, a.GetCardinality())
+	require.Equal(t, n, a.keys.numKeys())
+
+	for i := 0; i < n; i++ {
+		if i%2 == 1 {
+			a.Remove(uint64(i * (1 << 16)))
+		}
+	}
+	require.Equal(t, n/2, a.GetCardinality())
+	require.Equal(t, n, a.keys.numKeys())
+
+	a.Cleanup()
+	require.Equal(t, n/2, a.GetCardinality())
+	require.Equal(t, n/2, a.keys.numKeys())
+}
+
+func TestCleanupSplit(t *testing.T) {
+	a := NewBitmap()
+	n := int(1e6)
+
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i))
+	}
+
+	split := func() {
+		n := a.GetCardinality()
+		mid, err := a.Select(uint64(n / 2))
+		require.NoError(t, err)
+
+		b := a.Clone()
+		a.RemoveRange(0, mid)
+		b.RemoveRange(mid, math.MaxUint64)
+
+		require.Equal(t, n, a.GetCardinality()+b.GetCardinality())
+	}
+	for a.GetCardinality() > 1 {
+		split()
+	}
+}
+
 func TestIsEmpty(t *testing.T) {
 	a := NewBitmap()
 	require.True(t, a.IsEmpty())

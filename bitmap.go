@@ -540,6 +540,8 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	k1 := lo & mask
 	k2 := hi & mask
 
+	defer ra.Cleanup()
+
 	//  Complete range lie in a single container
 	if k1 == k2 {
 		if off, has := ra.keys.getValue(k1); has {
@@ -548,8 +550,6 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		}
 		return
 	}
-
-	defer ra.Cleanup()
 
 	// Remove all the containers in range [k1+1, k2-1].
 	n := ra.keys.numKeys()
@@ -579,6 +579,7 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		}
 	}
 
+	// No need to remove anything if hi is zero
 	if uint16(hi) == 0 {
 		return
 	}
@@ -1017,7 +1018,6 @@ func (ra *Bitmap) Cleanup() {
 	}
 
 	mergeAndClean := func(intervals []interval) uint64 {
-		var numRemoved uint64
 		assert(len(intervals) > 0)
 		merged := []interval{intervals[0]}
 		for _, ir := range intervals[1:] {
@@ -1034,11 +1034,10 @@ func (ra *Bitmap) Cleanup() {
 		for _, ir := range merged {
 			sz := ir.end - ir.start
 			ra.scootLeft(ir.start-moved, sz)
+			ra.keys.updateOffsets(ir.end-moved-1, sz, false)
 			moved += sz
-			ra.keys.updateOffsets(ir.end-1, sz, false)
-			numRemoved += sz
 		}
-		return numRemoved
+		return moved
 	}
 
 	sort.Slice(contIntervals, func(i, j int) bool {
