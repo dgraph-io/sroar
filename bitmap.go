@@ -1033,6 +1033,7 @@ func (ra *Bitmap) Cleanup() {
 		moved := uint64(0)
 		for _, ir := range merged {
 			sz := ir.end - ir.start
+			assert(ir.start >= moved)
 			ra.scootLeft(ir.start-moved, sz)
 			ra.keys.updateOffsets(ir.end-moved-1, sz, false)
 			moved += sz
