@@ -196,19 +196,6 @@ func (ra *Bitmap) scootLeft(offset uint64, size uint64) {
 	ra.data = ra.data[:n-size]
 }
 
-func (ra *Bitmap) removeKey(idx int) {
-	off := uint64(keyOffset(idx))
-	copy(ra.keys[off:], ra.keys[off+2:])
-	ra.keys.setNumKeys(ra.keys.numKeys() - 1)
-}
-
-func (ra *Bitmap) removeContainer(off uint64) {
-	cont := ra.getContainer(off)
-	sz := uint64(cont[indexSize])
-	ra.scootLeft(off, sz)
-	ra.keys.updateOffsets(off, sz, false)
-}
-
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
 	ra.fastExpand(sz)
