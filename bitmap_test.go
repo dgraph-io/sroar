@@ -727,7 +727,7 @@ func TestCleanup2(t *testing.T) {
 
 func TestCleanupSplit(t *testing.T) {
 	a := NewBitmap()
-	n := int(1e6)
+	n := int(1e8)
 
 	for i := 0; i < n; i++ {
 		a.Set(uint64(i))

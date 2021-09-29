@@ -1017,7 +1017,16 @@ func (ra *Bitmap) Cleanup() {
 		return
 	}
 
-	mergeAndClean := func(intervals []interval) uint64 {
+	var m []interval
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("Intervals: %+v\n", contIntervals)
+			fmt.Printf("Merged: %+v\n", m)
+			panic(r)
+		}
+	}()
+
+	mergeAndClean := func(intervals []interval, isK bool) uint64 {
 		assert(len(intervals) > 0)
 		merged := []interval{intervals[0]}
 		for _, ir := range intervals[1:] {
@@ -1030,11 +1039,16 @@ func (ra *Bitmap) Cleanup() {
 			merged = append(merged, ir)
 		}
 
+		m = merged
+
 		moved := uint64(0)
 		for _, ir := range merged {
 			sz := ir.end - ir.start
 			assert(ir.start >= moved)
 			ra.scootLeft(ir.start-moved, sz)
+			if isK {
+				ra.keys.setNumKeys(ra.keys.numKeys() - int(sz/8))
+			}
 			ra.keys.updateOffsets(ir.end-moved-1, sz, false)
 			moved += sz
 		}
@@ -1044,11 +1058,10 @@ func (ra *Bitmap) Cleanup() {
 	sort.Slice(contIntervals, func(i, j int) bool {
 		return contIntervals[i].start < contIntervals[j].start
 	})
-	mergeAndClean(contIntervals)
-	sz := mergeAndClean(keyIntervals)
+	mergeAndClean(contIntervals, false)
+	sz := mergeAndClean(keyIntervals, true)
 
 	ra.keys.setAt(indexNodeSize, uint64(ra.keys.size())-sz)
-	ra.keys.setNumKeys(ra.keys.numKeys() - len(keyIntervals))
 }
 
 func (ra *Bitmap) PrintKeys() {
