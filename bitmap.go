@@ -997,42 +997,56 @@ func (ra *Bitmap) Cleanup() {
 		end   uint64
 	}
 
-	intervals := []interval{}
-	for idx := 1; idx < ra.keys.numKeys(); {
+	var keyIntervals, contIntervals []interval
+	for idx := 1; idx < ra.keys.numKeys(); idx++ {
 		off := ra.keys.val(idx)
 		cont := ra.getContainer(off)
 		if getCardinality(cont) == 0 {
-			intervals = append(intervals, interval{off, off + uint64(cont[indexSize])})
-			// ra.removeContainer(off)
-			ra.removeKey(idx)
-			continue
+			ko := uint64(keyOffset(idx))
+			contIntervals = append(contIntervals, interval{off, off + uint64(cont[indexSize])})
+			keyIntervals = append(keyIntervals, interval{4 * ko, 4 * (ko + 2)})
 		}
-		idx++
 	}
-
-	if len(intervals) == 0 {
+	if len(contIntervals) == 0 {
 		return
 	}
 
-	sort.Slice(intervals, func(i, j int) bool { return intervals[i].start < intervals[j].start })
-
-	merged := []interval{intervals[0]}
-	for _, ir := range intervals[1:] {
-		last := merged[len(merged)-1]
-		if ir.start == last.end {
-			last.end = ir.end
-			merged[len(merged)-1] = last
-			continue
+	mergeAndClean := func(intervals []interval) {
+		assert(len(intervals) > 0)
+		merged := []interval{intervals[0]}
+		for _, ir := range intervals[1:] {
+			last := merged[len(merged)-1]
+			if ir.start == last.end {
+				last.end = ir.end
+				merged[len(merged)-1] = last
+				continue
+			}
+			merged = append(merged, ir)
 		}
-		merged = append(merged, ir)
+		for _, ir := range merged {
+			sz := ir.end - ir.start
+			ra.scootLeft(ir.start, sz)
+			ra.keys.updateOffsets(ir.end-1, sz, false)
+		}
 	}
 
-	for _, ir := range merged {
-		sz := ir.end - ir.start
-		ra.scootLeft(ir.start, sz)
-		ra.keys.updateOffsets(ir.start, sz, false)
-	}
+	sort.Slice(contIntervals, func(i, j int) bool {
+		return contIntervals[i].start < contIntervals[j].start
+	})
+	mergeAndClean(contIntervals)
+	mergeAndClean(keyIntervals)
+	ra.keys.setNumKeys(ra.keys.numKeys() - len(keyIntervals))
 }
+
+// func (ra *Bitmap) PrintKeys() {
+// 	for i := 0; i < ra.keys.numKeys(); i++ {
+// 		cont := ra.getContainer(ra.keys.val(i))
+// 		card := getCardinality(cont)
+// 		fmt.Printf("Key: %-10d Offset: %-10d card: %d header: %v\n",
+// 			ra.keys.key(i), ra.keys.val(i), card, cont[:4])
+// 	}
+// 	fmt.Println("===============")
+// }
 
 func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 	if len(bitmaps) == 0 {

@@ -563,7 +563,7 @@ func TestContainerRemoveRange(t *testing.T) {
 
 func TestRemoveRange(t *testing.T) {
 	a := NewBitmap()
-	N := int(1e7)
+	N := int(1e6)
 	for i := 0; i < N; i++ {
 		a.Set(uint64(i))
 	}
@@ -671,21 +671,26 @@ func TestExtremes(t *testing.T) {
 
 func TestCleanup(t *testing.T) {
 	a := NewBitmap()
-	n := int(1e6)
-	for i := 0; i < n; i++ {
-		a.Set(uint64(i))
-	}
-	for i := 65536; i < n; i++ {
-		a.Remove(uint64(i))
-	}
+	n := 10
 
-	a.Cleanup()
-	for i := 0; i < 65535; i++ {
-		require.Truef(t, a.Contains(uint64(i)), "idx: %d", i)
+	for i := 0; i < n; i++ {
+		a.Set(uint64((i * (1 << 16))))
 	}
-	for i := 65536; i < n; i++ {
-		require.Falsef(t, a.Contains(uint64(i)), "idx: %d", i)
-	}
+	abuf := a.ToBufferWithCopy()
+
+	require.Equal(t, 10, a.keys.numKeys())
+	a.RemoveRange(1, 2*(1<<16))
+	require.Equal(t, 8, a.keys.numKeys())
+
+	a.RemoveRange(6*(1<<16), 8*(1<<16))
+	require.Equal(t, 5, a.keys.numKeys())
+
+	a = FromBufferWithCopy(abuf)
+	require.Equal(t, 10, a.keys.numKeys())
+	a.RemoveRange(1, 2*(1<<16))
+	a.RemoveRange(6*(1<<16), 8*(1<<16))
+	require.Equal(t, 5, a.keys.numKeys())
+
 }
 
 func TestIsEmpty(t *testing.T) {
