@@ -1003,6 +1003,7 @@ func (ra *Bitmap) Cleanup() {
 		end   uint64
 	}
 
+	// Find the ranges that needs to be removed in the key space and the container space
 	var keyIntervals, contIntervals []interval
 	for idx := 1; idx < ra.keys.numKeys(); idx++ {
 		off := ra.keys.val(idx)
@@ -1017,17 +1018,10 @@ func (ra *Bitmap) Cleanup() {
 		return
 	}
 
-	var m []interval
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Printf("Intervals: %+v\n", contIntervals)
-			fmt.Printf("Merged: %+v\n", m)
-			panic(r)
-		}
-	}()
-
-	mergeAndClean := func(intervals []interval, isK bool) uint64 {
+	mergeAndClean := func(intervals []interval, isKey bool) {
 		assert(len(intervals) > 0)
+
+		// Merge the ranges in order to reduce scootLeft
 		merged := []interval{intervals[0]}
 		for _, ir := range intervals[1:] {
 			last := merged[len(merged)-1]
@@ -1039,39 +1033,30 @@ func (ra *Bitmap) Cleanup() {
 			merged = append(merged, ir)
 		}
 
-		m = merged
-
+		// Do scootLeft and update the container offsets using the merged ranges.
 		moved := uint64(0)
 		for _, ir := range merged {
-			sz := ir.end - ir.start
 			assert(ir.start >= moved)
+			sz := ir.end - ir.start
 			ra.scootLeft(ir.start-moved, sz)
-			if isK {
+
+			if isKey {
+				// update the number of keys and key space size after key removal.
 				ra.keys.setNumKeys(ra.keys.numKeys() - int(sz/8))
+				ra.keys.setAt(indexNodeSize, uint64(ra.keys.size())-sz)
 			}
 			ra.keys.updateOffsets(ir.end-moved-1, sz, false)
 			moved += sz
 		}
-		return moved
 	}
 
+	// Key intervals are already sorted, but container intervals needs to be sorted because
+	// they are always added in the end of the ra.data.
 	sort.Slice(contIntervals, func(i, j int) bool {
 		return contIntervals[i].start < contIntervals[j].start
 	})
 	mergeAndClean(contIntervals, false)
-	sz := mergeAndClean(keyIntervals, true)
-
-	ra.keys.setAt(indexNodeSize, uint64(ra.keys.size())-sz)
-}
-
-func (ra *Bitmap) PrintKeys() {
-	for i := 0; i < ra.keys.numKeys(); i++ {
-		cont := ra.getContainer(ra.keys.val(i))
-		card := getCardinality(cont)
-		fmt.Printf("Key: %#x Offset: %-10d card: %d header: %v\n",
-			ra.keys.key(i), ra.keys.val(i), card, cont[:4])
-	}
-	fmt.Println("===============")
+	mergeAndClean(keyIntervals, true)
 }
 
 func FastAnd(bitmaps ...*Bitmap) *Bitmap {

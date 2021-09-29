@@ -20,12 +20,13 @@ import (
 	"log"
 	"reflect"
 	"unsafe"
+
+	"github.com/pkg/errors"
 )
 
 func assert(b bool) {
 	if !b {
-		panic("lol")
-		// 	panic("%+v", errors.Errorf("Assertion failure"))
+		log.Fatalf("%+v", errors.Errorf("Assertion failure"))
 	}
 }
 func check(err error) {
