@@ -679,17 +679,17 @@ func TestCleanup(t *testing.T) {
 	abuf := a.ToBufferWithCopy()
 
 	require.Equal(t, 10, a.keys.numKeys())
-	a.RemoveRange(1, 2*(1<<16))
-	require.Equal(t, 8, a.keys.numKeys())
+	a.RemoveRange(1<<16, 2*(1<<16))
+	require.Equal(t, 9, a.keys.numKeys())
 
 	a.RemoveRange(6*(1<<16), 8*(1<<16))
-	require.Equal(t, 5, a.keys.numKeys())
+	require.Equal(t, 7, a.keys.numKeys())
 
 	a = FromBufferWithCopy(abuf)
 	require.Equal(t, 10, a.keys.numKeys())
-	a.RemoveRange(1, 2*(1<<16))
-	a.RemoveRange(6*(1<<16), 8*(1<<16))
-	require.Equal(t, 5, a.keys.numKeys())
+	a.Remove(6 * (1 << 16))
+	a.RemoveRange(7*(1<<16), 9*(1<<16))
+	require.Equal(t, 7, a.keys.numKeys())
 
 	n = int(1e6)
 	b := NewBitmap()

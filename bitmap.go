@@ -549,6 +549,8 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		return
 	}
 
+	defer ra.Cleanup()
+
 	// Remove all the containers in range [k1+1, k2-1].
 	n := ra.keys.numKeys()
 	st := ra.keys.search(k1)
@@ -577,6 +579,10 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		}
 	}
 
+	if uint16(hi) == 0 {
+		return
+	}
+
 	// Remove all elements < hi in k2's container
 	if off, has := ra.keys.getValue(k2); has {
 		c := ra.getContainer(off)
@@ -587,7 +593,6 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		}
 	}
 
-	ra.Cleanup()
 }
 
 func (ra *Bitmap) Reset() {
@@ -1024,9 +1029,12 @@ func (ra *Bitmap) Cleanup() {
 			}
 			merged = append(merged, ir)
 		}
+
+		moved := uint64(0)
 		for _, ir := range merged {
 			sz := ir.end - ir.start
-			ra.scootLeft(ir.start, sz)
+			ra.scootLeft(ir.start-moved, sz)
+			moved += sz
 			ra.keys.updateOffsets(ir.end-1, sz, false)
 			numRemoved += sz
 		}
@@ -1043,15 +1051,15 @@ func (ra *Bitmap) Cleanup() {
 	ra.keys.setNumKeys(ra.keys.numKeys() - len(keyIntervals))
 }
 
-// func (ra *Bitmap) PrintKeys() {
-// 	for i := 0; i < ra.keys.numKeys(); i++ {
-// 		cont := ra.getContainer(ra.keys.val(i))
-// 		card := getCardinality(cont)
-// 		fmt.Printf("Key: %-10d Offset: %-10d card: %d header: %v\n",
-// 			ra.keys.key(i), ra.keys.val(i), card, cont[:4])
-// 	}
-// 	fmt.Println("===============")
-// }
+func (ra *Bitmap) PrintKeys() {
+	for i := 0; i < ra.keys.numKeys(); i++ {
+		cont := ra.getContainer(ra.keys.val(i))
+		card := getCardinality(cont)
+		fmt.Printf("Key: %#x Offset: %-10d card: %d header: %v\n",
+			ra.keys.key(i), ra.keys.val(i), card, cont[:4])
+	}
+	fmt.Println("===============")
+}
 
 func FastAnd(bitmaps ...*Bitmap) *Bitmap {
 	if len(bitmaps) == 0 {
