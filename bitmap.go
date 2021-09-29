@@ -1011,7 +1011,8 @@ func (ra *Bitmap) Cleanup() {
 		return
 	}
 
-	mergeAndClean := func(intervals []interval) {
+	mergeAndClean := func(intervals []interval) uint64 {
+		var numRemoved uint64
 		assert(len(intervals) > 0)
 		merged := []interval{intervals[0]}
 		for _, ir := range intervals[1:] {
@@ -1027,14 +1028,18 @@ func (ra *Bitmap) Cleanup() {
 			sz := ir.end - ir.start
 			ra.scootLeft(ir.start, sz)
 			ra.keys.updateOffsets(ir.end-1, sz, false)
+			numRemoved += sz
 		}
+		return numRemoved
 	}
 
 	sort.Slice(contIntervals, func(i, j int) bool {
 		return contIntervals[i].start < contIntervals[j].start
 	})
 	mergeAndClean(contIntervals)
-	mergeAndClean(keyIntervals)
+	sz := mergeAndClean(keyIntervals)
+
+	ra.keys.setAt(indexNodeSize, uint64(ra.keys.size())-sz)
 	ra.keys.setNumKeys(ra.keys.numKeys() - len(keyIntervals))
 }
 
