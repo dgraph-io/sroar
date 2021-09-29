@@ -691,6 +691,16 @@ func TestCleanup(t *testing.T) {
 	a.RemoveRange(6*(1<<16), 8*(1<<16))
 	require.Equal(t, 5, a.keys.numKeys())
 
+	n = int(1e6)
+	b := NewBitmap()
+	for i := 0; i < n; i++ {
+		b.Set(uint64(i))
+	}
+	b.RemoveRange(0, uint64(n/2))
+	require.Equal(t, n/2, b.GetCardinality())
+	buf := b.ToBuffer()
+	b = FromBuffer(buf)
+	require.Equal(t, n/2, b.GetCardinality())
 }
 
 func TestIsEmpty(t *testing.T) {
