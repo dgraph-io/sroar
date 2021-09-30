@@ -795,3 +795,19 @@ func TestRank(t *testing.T) {
 		}
 	}
 }
+
+func TestAnd2(t *testing.T) {
+	a := NewBitmap()
+	n := int(1e7)
+
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i))
+	}
+	require.Equal(t, n, a.GetCardinality())
+	a.RemoveRange(0, uint64(n/2))
+
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i))
+	}
+	require.Equal(t, n, a.GetCardinality())
+}

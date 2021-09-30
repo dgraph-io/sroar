@@ -1031,6 +1031,7 @@ func (ra *Bitmap) Cleanup() {
 				// update the number of keys and key space size after key removal.
 				ra.keys.setNumKeys(ra.keys.numKeys() - int(sz/8))
 				ra.keys.setAt(indexNodeSize, uint64(ra.keys.size())-sz)
+				ra.keys = ra.keys[:len(ra.keys)-int(sz/4)]
 			}
 			ra.keys.updateOffsets(ir.end-moved-1, sz, false)
 			moved += sz
@@ -1044,6 +1045,16 @@ func (ra *Bitmap) Cleanup() {
 	})
 	mergeAndClean(contIntervals, false)
 	mergeAndClean(keyIntervals, true)
+}
+
+func (ra *Bitmap) PrintKeys() {
+	for i := 0; i < ra.keys.numKeys(); i++ {
+		key := ra.keys.key(i)
+		offset := ra.keys.val(i)
+		cont := ra.getContainer(offset)
+		fmt.Printf("key: %#x, offset: %d card: %d\n", key, offset, getCardinality(cont))
+	}
+	fmt.Printf("==========================================\n\n")
 }
 
 func FastAnd(bitmaps ...*Bitmap) *Bitmap {
