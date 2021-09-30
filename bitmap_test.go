@@ -594,6 +594,7 @@ func TestRemoveRange(t *testing.T) {
 }
 
 func TestRemoveRange2(t *testing.T) {
+	// High from the last container should not be removed.
 	a := NewBitmap()
 	for i := 1; i < 10; i++ {
 		a.Set(uint64(i * (1 << 16)))

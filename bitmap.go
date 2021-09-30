@@ -397,6 +397,11 @@ func FromSortedList(vals []uint64) *Bitmap {
 	var hi, lastHi, off uint64
 
 	ra := NewBitmap()
+
+	if len(vals) == 0 {
+		return ra
+	}
+
 	// Set the keys beforehand so that we don't need to move a lot of memory because of adding keys.
 	for _, x := range vals {
 		hi = x & mask
@@ -405,8 +410,8 @@ func FromSortedList(vals []uint64) *Bitmap {
 		}
 		lastHi = hi
 	}
+	ra.setKey(lastHi, 0)
 
-	// TODO: Shouldn't we insert the key for lastHi here? Else we will have to do scootRight later on.
 	finalize := func(l []uint16, key uint64) {
 		if len(l) == 0 {
 			return
@@ -592,13 +597,11 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	}
 }
 
-// TODO: Do we need to zero it out?
 func (ra *Bitmap) Reset() {
 	// reset ra.data to size enough for one container and corresponding key.
 	// 2 u64 is needed for header and another 2 u16 for the key 0.
 	ra.data = ra.data[:16+minContainerSize]
 	ra.keys = toUint64Slice(ra.data)
-	// TODO: Do we need to set the node size?
 
 	offset := ra.newContainer(minContainerSize)
 	ra.keys.setAt(indexNodeStart+1, offset)
@@ -711,7 +714,6 @@ func (ra *Bitmap) Debug(x uint64) string {
 
 func (ra *Bitmap) extreme(dir int) uint64 {
 	N := ra.keys.numKeys()
-	// TODO: When would it be zero? I think we set it to 1 by default
 	if N == 0 {
 		return 0
 	}
@@ -778,8 +780,7 @@ func (ra *Bitmap) And(bm *Bitmap) {
 			bc := b.getContainer(off)
 
 			// do the intersection
-			// TODO: When will this container be removed? Cleanup would not be able to pick this up.
-			// We can try to replace it inplace as we know that the size of AND will be less for sure.
+			// TODO: See if we can do containerAnd operation in-place.
 			c := containerAnd(ac, bc)
 
 			// create a new container and update the key offset to this container.
