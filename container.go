@@ -202,11 +202,6 @@ func (c array) removeRange(lo, hi uint16) {
 	if c[st+hiIdx] == hi {
 		hiIdx++
 	}
-	if loIdx == 0 {
-		copy(c[st:], c[st+hiIdx:])
-		setCardinality(c, N-hiIdx)
-		return
-	}
 	copy(c[st+loIdx:], c[st+hiIdx:])
 	setCardinality(c, N-hiIdx+loIdx)
 }
@@ -342,8 +337,8 @@ func (c array) toBitmapContainer(buf []uint16) []uint16 {
 
 	data := b[startIdx:]
 	for _, x := range c.all() {
-		idx := x / 16
-		pos := x % 16
+		idx := x >> 4
+		pos := x & 0xF
 		data[idx] |= bitmapMask[pos]
 	}
 	return b
