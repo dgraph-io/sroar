@@ -17,7 +17,7 @@ var (
 type node []uint64
 
 func keyOffset(i int) int { return indexNodeStart + 2*i }
-func valOffset(i int) int { return indexNodeStart + 1 + 2*i }
+func valOffset(i int) int { return indexNodeStart + 2*i + 1 }
 
 func (n node) numKeys() int        { return int(n[indexNumKeys]) }
 func (n node) size() int           { return int(n[indexNodeSize]) }
@@ -30,6 +30,7 @@ func (n node) uint64(idx int) uint64   { return n[idx] }
 func (n node) setAt(idx int, k uint64) { n[idx] = k }
 
 func (n node) setNumKeys(num int) { n[indexNumKeys] = uint64(num) }
+func (n node) setNodeSize(sz int) { n[indexNodeSize] = uint64(sz) }
 
 func (n node) maxKey() uint64 {
 	idx := n.numKeys()

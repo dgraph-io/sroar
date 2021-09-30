@@ -105,7 +105,7 @@ func NewBitmapWith(numKeys int) *Bitmap {
 		data: make([]uint16, 4*(2*numKeys+2)),
 	}
 	ra.keys = toUint64Slice(ra.data)
-	ra.keys.setAt(indexNodeSize, uint64(len(ra.data)))
+	ra.keys.setNodeSize(len(ra.data))
 
 	// Always generate a container for key = 0x00. Otherwise, node gets confused
 	// about whether a zero key is a new key or not.
@@ -137,7 +137,7 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 
 	ra.scootRight(curSize, uint16(bySize))
 	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
-	ra.keys.setAt(indexNodeSize, uint64(curSize+bySize))
+	ra.keys.setNodeSize(int(curSize + bySize))
 
 	// All containers have moved to the right by bySize bytes.
 	// Update their offsets.
@@ -1051,7 +1051,7 @@ func (ra *Bitmap) Cleanup() {
 
 		// sz is in number of u16s, hence number of key-value removed is sz/8.
 		ra.keys.setNumKeys(ra.keys.numKeys() - int(sz/8))
-		ra.keys.setAt(indexNodeSize, uint64(ra.keys.size())-sz)
+		ra.keys.setNodeSize(ra.keys.size() - int(sz))
 		ra.keys = ra.keys[:len(ra.keys)-int(sz/4)]
 		ra.keys.updateOffsets(ir.end-moved-1, sz, false)
 		moved += sz
