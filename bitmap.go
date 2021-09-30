@@ -19,6 +19,7 @@ package sroar
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 
@@ -47,7 +48,7 @@ func FromBuffer(data []byte) *Bitmap {
 		return NewBitmap()
 	}
 	du := toUint16Slice(data)
-	x := toUint64Slice(du[:4])[0]
+	x := toUint64Slice(du[:4])[indexNodeSize]
 	return &Bitmap{
 		data: du,
 		_ptr: data,
@@ -64,7 +65,7 @@ func FromBufferWithCopy(data []byte) *Bitmap {
 	dup := make([]byte, len(data))
 	copy(dup, data)
 	du := toUint16Slice(dup)
-	x := toUint64Slice(du[:4])[0]
+	x := toUint64Slice(du[:4])[indexNodeSize]
 
 	return &Bitmap{
 		data: du,
@@ -104,7 +105,7 @@ func NewBitmapWith(numKeys int) *Bitmap {
 		data: make([]uint16, 4*(2*numKeys+2)),
 	}
 	ra.keys = toUint64Slice(ra.data)
-	ra.keys.setAt(indexNodeSize, uint64(len(ra.data)))
+	ra.keys.setNodeSize(len(ra.data))
 
 	// Always generate a container for key = 0x00. Otherwise, node gets confused
 	// about whether a zero key is a new key or not.
@@ -131,12 +132,12 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	curSize := uint64(len(ra.keys) * 4) // Multiply by 4 for U64 -> U16.
 	bySize := curSize
 	if bySize > math.MaxUint16 {
-		bySize = math.MaxInt16
+		bySize = math.MaxUint16
 	}
 
 	ra.scootRight(curSize, uint16(bySize))
 	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
-	ra.keys.setAt(0, uint64(curSize+bySize))
+	ra.keys.setNodeSize(int(curSize + bySize))
 
 	// All containers have moved to the right by bySize bytes.
 	// Update their offsets.
@@ -195,24 +196,10 @@ func (ra *Bitmap) scootLeft(offset uint64, size uint64) {
 	ra.data = ra.data[:n-size]
 }
 
-func (ra *Bitmap) removeKey(idx int) {
-	off := uint64(4 * keyOffset(idx))
-	// remove 8 u16s, which corresponds to a key and value (two u64s)
-	ra.scootLeft(off, 8)
-	ra.keys.updateOffsets(off, 8, false)
-	ra.keys.setNumKeys(ra.keys.numKeys() - 1)
-}
-
-func (ra *Bitmap) removeContainer(off uint64) {
-	cont := ra.getContainer(off)
-	sz := uint64(cont[indexSize])
-	ra.scootLeft(off, sz)
-	ra.keys.updateOffsets(off, sz, false)
-}
-
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
 	ra.fastExpand(sz)
+	Memclr(ra.data[offset : offset+uint64(sz)])
 	ra.data[offset] = sz
 	return offset
 }
@@ -546,6 +533,8 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	k1 := lo & mask
 	k2 := hi & mask
 
+	defer ra.Cleanup()
+
 	//  Complete range lie in a single container
 	if k1 == k2 {
 		if off, has := ra.keys.getValue(k1); has {
@@ -562,8 +551,6 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	if key == k1 {
 		st++
 	}
-
-	defer ra.Cleanup()
 
 	for i := st; i < n; i++ {
 		key := ra.keys.key(i)
@@ -585,7 +572,6 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		}
 	}
 
-	// There is nothing to remove in the last container.
 	if uint16(hi) == 0 {
 		return
 	}
@@ -1000,15 +986,76 @@ func (ra *Bitmap) Rank(x uint64) int {
 }
 
 func (ra *Bitmap) Cleanup() {
-	for idx := 1; idx < ra.keys.numKeys(); {
+	type interval struct {
+		start uint64
+		end   uint64
+	}
+
+	// Find the ranges that needs to be removed in the key space and the container space. Also,
+	// start the iteration from idx = 1 because we never remove the 0 key.
+	var keyIntervals, contIntervals []interval
+	for idx := 1; idx < ra.keys.numKeys(); idx++ {
 		off := ra.keys.val(idx)
 		cont := ra.getContainer(off)
 		if getCardinality(cont) == 0 {
-			ra.removeContainer(off)
-			ra.removeKey(idx)
-			continue
+			ko := uint64(keyOffset(idx))
+			contIntervals = append(contIntervals, interval{off, off + uint64(cont[indexSize])})
+			keyIntervals = append(keyIntervals, interval{4 * ko, 4 * (ko + 2)})
 		}
-		idx++
+	}
+	if len(contIntervals) == 0 {
+		return
+	}
+
+	merge := func(intervals []interval) []interval {
+		assert(len(intervals) > 0)
+
+		// Merge the ranges in order to reduce scootLeft
+		merged := []interval{intervals[0]}
+		for _, ir := range intervals[1:] {
+			last := merged[len(merged)-1]
+			if ir.start == last.end {
+				last.end = ir.end
+				merged[len(merged)-1] = last
+				continue
+			}
+			merged = append(merged, ir)
+		}
+		return merged
+	}
+
+	// Key intervals are already sorted, but container intervals needs to be sorted because
+	// they are always added in the end of the ra.data.
+	sort.Slice(contIntervals, func(i, j int) bool {
+		return contIntervals[i].start < contIntervals[j].start
+	})
+
+	contIntervals = merge(contIntervals)
+	keyIntervals = merge(keyIntervals)
+
+	// Cleanup the containers.
+	moved := uint64(0)
+	for _, ir := range contIntervals {
+		assert(ir.start >= moved)
+		sz := ir.end - ir.start
+		ra.scootLeft(ir.start-moved, sz)
+		ra.keys.updateOffsets(ir.end-moved-1, sz, false)
+		moved += sz
+	}
+
+	// Cleanup the key space.
+	moved = uint64(0)
+	for _, ir := range keyIntervals {
+		assert(ir.start >= moved)
+		sz := ir.end - ir.start
+		ra.scootLeft(ir.start-moved, sz)
+
+		// sz is in number of u16s, hence number of key-value removed is sz/8.
+		ra.keys.setNumKeys(ra.keys.numKeys() - int(sz/8))
+		ra.keys.setNodeSize(ra.keys.size() - int(sz))
+		ra.keys = ra.keys[:len(ra.keys)-int(sz/4)]
+		ra.keys.updateOffsets(ir.end-moved-1, sz, false)
+		moved += sz
 	}
 }
 
