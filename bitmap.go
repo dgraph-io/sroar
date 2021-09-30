@@ -1005,7 +1005,7 @@ func (ra *Bitmap) Cleanup() {
 		return
 	}
 
-	mergeAndClean := func(intervals []interval, isKey bool) {
+	merge := func(intervals []interval) []interval {
 		assert(len(intervals) > 0)
 
 		// Merge the ranges in order to reduce scootLeft
@@ -1020,22 +1020,7 @@ func (ra *Bitmap) Cleanup() {
 			merged = append(merged, ir)
 		}
 
-		// Do scootLeft and update the container offsets using the merged ranges.
-		moved := uint64(0)
-		for _, ir := range merged {
-			assert(ir.start >= moved)
-			sz := ir.end - ir.start
-			ra.scootLeft(ir.start-moved, sz)
-
-			if isKey {
-				// update the number of keys and key space size after key removal.
-				ra.keys.setNumKeys(ra.keys.numKeys() - int(sz/8))
-				ra.keys.setAt(indexNodeSize, uint64(ra.keys.size())-sz)
-				ra.keys = ra.keys[:len(ra.keys)-int(sz/4)]
-			}
-			ra.keys.updateOffsets(ir.end-moved-1, sz, false)
-			moved += sz
-		}
+		return merged
 	}
 
 	// Key intervals are already sorted, but container intervals needs to be sorted because
@@ -1043,8 +1028,34 @@ func (ra *Bitmap) Cleanup() {
 	sort.Slice(contIntervals, func(i, j int) bool {
 		return contIntervals[i].start < contIntervals[j].start
 	})
-	mergeAndClean(contIntervals, false)
-	mergeAndClean(keyIntervals, true)
+
+	contIntervals = merge(contIntervals)
+	keyIntervals = merge(keyIntervals)
+
+	// Cleanup the containers.
+	moved := uint64(0)
+	for _, ir := range contIntervals {
+		assert(ir.start >= moved)
+		sz := ir.end - ir.start
+		ra.scootLeft(ir.start-moved, sz)
+		ra.keys.updateOffsets(ir.end-moved-1, sz, false)
+		moved += sz
+	}
+
+	// Cleanup the key space.
+	moved = uint64(0)
+	for _, ir := range keyIntervals {
+		assert(ir.start >= moved)
+		sz := ir.end - ir.start
+		ra.scootLeft(ir.start-moved, sz)
+
+		// sz is in number of u16s, hence number of key-value removed is sz/8.
+		ra.keys.setNumKeys(ra.keys.numKeys() - int(sz/8))
+		ra.keys.setAt(indexNodeSize, uint64(ra.keys.size())-sz)
+		ra.keys = ra.keys[:len(ra.keys)-int(sz/4)]
+		ra.keys.updateOffsets(ir.end-moved-1, sz, false)
+		moved += sz
+	}
 }
 
 func (ra *Bitmap) PrintKeys() {
