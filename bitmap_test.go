@@ -593,6 +593,16 @@ func TestRemoveRange(t *testing.T) {
 	require.Equal(t, 50, b.GetCardinality())
 }
 
+func TestRemoveRange2(t *testing.T) {
+	a := NewBitmap()
+	for i := 1; i < 10; i++ {
+		a.Set(uint64(i * (1 << 16)))
+		a.Set(uint64(i*(1<<16)) - 1)
+	}
+	a.RemoveRange(1<<16, (4<<16)-1)
+	require.True(t, a.Contains((4<<16)-1))
+}
+
 func TestSelect(t *testing.T) {
 	a := NewBitmap()
 	N := int(1e4)

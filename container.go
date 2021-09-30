@@ -192,6 +192,7 @@ func (c array) removeRange(lo, hi uint16) {
 	}
 	if hiIdx == N {
 		if loIdx > 0 {
+			// TODO: Shouldn't it be c[:startIdx+lowIdx]
 			c = c[:int(startIdx)+loIdx-1]
 		} else {
 			c = c[:int(startIdx)]
@@ -202,6 +203,7 @@ func (c array) removeRange(lo, hi uint16) {
 	if c[st+hiIdx] == hi {
 		hiIdx++
 	}
+	// TODO: This if condition can be eliminated?
 	if loIdx == 0 {
 		copy(c[st:], c[st+hiIdx:])
 		setCardinality(c, N-hiIdx)
@@ -342,8 +344,8 @@ func (c array) toBitmapContainer(buf []uint16) []uint16 {
 
 	data := b[startIdx:]
 	for _, x := range c.all() {
-		idx := x / 16
-		pos := x % 16
+		idx := x >> 4
+		pos := x & 0xF
 		data[idx] |= bitmapMask[pos]
 	}
 	return b

@@ -100,7 +100,7 @@ func NewBitmapWith(numKeys int) *Bitmap {
 	ra := &Bitmap{
 		// Each key must also keep an offset. So, we need to double the number
 		// of uint64s allocated. Plus, we need to make space for the first 2
-		// uint64s to store the number of keys.
+		// uint64s to store the number of keys and node size.
 		data: make([]uint16, 4*(2*numKeys+2)),
 	}
 	ra.keys = toUint64Slice(ra.data)
@@ -406,6 +406,7 @@ func FromSortedList(vals []uint64) *Bitmap {
 		lastHi = hi
 	}
 
+	// TODO: Shouldn't we insert the key for lastHi here? Else we will have to do scootRight later on.
 	finalize := func(l []uint16, key uint64) {
 		if len(l) == 0 {
 			return
@@ -557,6 +558,8 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		st++
 	}
 
+	defer ra.Cleanup()
+
 	for i := st; i < n; i++ {
 		key := ra.keys.key(i)
 		if key >= k2 {
@@ -577,24 +580,25 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		}
 	}
 
+	// There is nothing to remove in the last container.
+	if uint16(hi) == 0 {
+		return
+	}
+
 	// Remove all elements < hi in k2's container
 	if off, has := ra.keys.getValue(k2); has {
 		c := ra.getContainer(off)
-		if uint16(hi) == math.MaxUint16 {
-			zeroOutContainer(c)
-		} else {
-			removeRangeContainer(c, 0, uint16(hi)-1)
-		}
+		removeRangeContainer(c, 0, uint16(hi)-1)
 	}
-
-	ra.Cleanup()
 }
 
+// TODO: Do we need to zero it out?
 func (ra *Bitmap) Reset() {
 	// reset ra.data to size enough for one container and corresponding key.
 	// 2 u64 is needed for header and another 2 u16 for the key 0.
 	ra.data = ra.data[:16+minContainerSize]
 	ra.keys = toUint64Slice(ra.data)
+	// TODO: Do we need to set the node size?
 
 	offset := ra.newContainer(minContainerSize)
 	ra.keys.setAt(indexNodeStart+1, offset)
@@ -619,7 +623,7 @@ func (ra *Bitmap) ToArray() []uint64 {
 	if ra == nil {
 		return nil
 	}
-	var res []uint64
+	res := make([]uint64, 0, ra.GetCardinality())
 	N := ra.keys.numKeys()
 	for i := 0; i < N; i++ {
 		key := ra.keys.key(i)
@@ -707,6 +711,7 @@ func (ra *Bitmap) Debug(x uint64) string {
 
 func (ra *Bitmap) extreme(dir int) uint64 {
 	N := ra.keys.numKeys()
+	// TODO: When would it be zero? I think we set it to 1 by default
 	if N == 0 {
 		return 0
 	}
@@ -773,6 +778,8 @@ func (ra *Bitmap) And(bm *Bitmap) {
 			bc := b.getContainer(off)
 
 			// do the intersection
+			// TODO: When will this container be removed? Cleanup would not be able to pick this up.
+			// We can try to replace it inplace as we know that the size of AND will be less for sure.
 			c := containerAnd(ac, bc)
 
 			// create a new container and update the key offset to this container.
@@ -858,10 +865,10 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 			bi++
 			continue
 		}
-		if ak > bk {
-			bi++
-		} else {
+		if ak < bk {
 			ai++
+		} else {
+			bi++
 		}
 	}
 }
