@@ -552,8 +552,6 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		st++
 	}
 
-	defer ra.Cleanup()
-
 	for i := st; i < n; i++ {
 		key := ra.keys.key(i)
 		if key >= k2 {
@@ -993,7 +991,8 @@ func (ra *Bitmap) Cleanup() {
 		end   uint64
 	}
 
-	// Find the ranges that needs to be removed in the key space and the container space
+	// Find the ranges that needs to be removed in the key space and the container space. Also,
+	// start the iteration from idx = 1 because we never remove the 0 key.
 	var keyIntervals, contIntervals []interval
 	for idx := 1; idx < ra.keys.numKeys(); idx++ {
 		off := ra.keys.val(idx)
@@ -1022,7 +1021,6 @@ func (ra *Bitmap) Cleanup() {
 			}
 			merged = append(merged, ir)
 		}
-
 		return merged
 	}
 
@@ -1059,16 +1057,6 @@ func (ra *Bitmap) Cleanup() {
 		ra.keys.updateOffsets(ir.end-moved-1, sz, false)
 		moved += sz
 	}
-}
-
-func (ra *Bitmap) PrintKeys() {
-	for i := 0; i < ra.keys.numKeys(); i++ {
-		key := ra.keys.key(i)
-		offset := ra.keys.val(i)
-		cont := ra.getContainer(offset)
-		fmt.Printf("key: %#x, offset: %d card: %d\n", key, offset, getCardinality(cont))
-	}
-	fmt.Printf("==========================================\n\n")
 }
 
 func FastAnd(bitmaps ...*Bitmap) *Bitmap {
