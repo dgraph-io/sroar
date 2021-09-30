@@ -563,7 +563,7 @@ func TestContainerRemoveRange(t *testing.T) {
 
 func TestRemoveRange(t *testing.T) {
 	a := NewBitmap()
-	N := int(1e6)
+	N := int(1e7)
 	for i := 0; i < N; i++ {
 		a.Set(uint64(i))
 	}
