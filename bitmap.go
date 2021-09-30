@@ -101,7 +101,7 @@ func NewBitmapWith(numKeys int) *Bitmap {
 	ra := &Bitmap{
 		// Each key must also keep an offset. So, we need to double the number
 		// of uint64s allocated. Plus, we need to make space for the first 2
-		// uint64s to store the number of keys.
+		// uint64s to store the number of keys and node size.
 		data: make([]uint16, 4*(2*numKeys+2)),
 	}
 	ra.keys = toUint64Slice(ra.data)
@@ -384,6 +384,11 @@ func FromSortedList(vals []uint64) *Bitmap {
 	var hi, lastHi, off uint64
 
 	ra := NewBitmap()
+
+	if len(vals) == 0 {
+		return ra
+	}
+
 	// Set the keys beforehand so that we don't need to move a lot of memory because of adding keys.
 	for _, x := range vals {
 		hi = x & mask
@@ -392,6 +397,7 @@ func FromSortedList(vals []uint64) *Bitmap {
 		}
 		lastHi = hi
 	}
+	ra.setKey(lastHi, 0)
 
 	finalize := func(l []uint16, key uint64) {
 		if len(l) == 0 {
@@ -546,6 +552,8 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		st++
 	}
 
+	defer ra.Cleanup()
+
 	for i := st; i < n; i++ {
 		key := ra.keys.key(i)
 		if key >= k2 {
@@ -566,7 +574,6 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		}
 	}
 
-	// No need to remove anything if hi is zero
 	if uint16(hi) == 0 {
 		return
 	}
@@ -574,13 +581,8 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	// Remove all elements < hi in k2's container
 	if off, has := ra.keys.getValue(k2); has {
 		c := ra.getContainer(off)
-		if uint16(hi) == math.MaxUint16 {
-			zeroOutContainer(c)
-		} else {
-			removeRangeContainer(c, 0, uint16(hi)-1)
-		}
+		removeRangeContainer(c, 0, uint16(hi)-1)
 	}
-
 }
 
 func (ra *Bitmap) Reset() {
@@ -612,7 +614,7 @@ func (ra *Bitmap) ToArray() []uint64 {
 	if ra == nil {
 		return nil
 	}
-	var res []uint64
+	res := make([]uint64, 0, ra.GetCardinality())
 	N := ra.keys.numKeys()
 	for i := 0; i < N; i++ {
 		key := ra.keys.key(i)
@@ -766,6 +768,7 @@ func (ra *Bitmap) And(bm *Bitmap) {
 			bc := b.getContainer(off)
 
 			// do the intersection
+			// TODO: See if we can do containerAnd operation in-place.
 			c := containerAnd(ac, bc)
 
 			// create a new container and update the key offset to this container.
@@ -851,10 +854,10 @@ func (ra *Bitmap) AndNot(bm *Bitmap) {
 			bi++
 			continue
 		}
-		if ak > bk {
-			bi++
-		} else {
+		if ak < bk {
 			ai++
+		} else {
+			bi++
 		}
 	}
 }
