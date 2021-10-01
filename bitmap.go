@@ -669,7 +669,14 @@ func (ra *Bitmap) Split() (*Bitmap, *Bitmap) {
 		bm.keys.setNodeSize(int(curSize + bySize))
 		bm.keys.updateOffsets(curSize-1, bySize, true)
 
+		var keys []uint64
 		for key := range mp {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(i, j int) bool {
+			return keys[i] < keys[j]
+		})
+		for _, key := range keys {
 			bm.setKey(key, 0)
 		}
 
