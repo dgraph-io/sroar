@@ -151,40 +151,6 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	return offset + bySize
 }
 
-func (ra *Bitmap) setKey2(k uint64, offset uint64) uint64 {
-	if added := ra.keys.set(k, offset); !added {
-		// No new key was added. So, we can just return.
-		return offset
-	}
-	// A new key was added. Let's ensure that ra.keys is not full.
-	if !ra.keys.isFull() {
-		return offset
-	}
-	panic("why reaching here?")
-
-	// ra.keys is full. We should expand its size.
-	curSize := uint64(len(ra.keys) * 4) // Multiply by 4 for U64 -> U16.
-	bySize := curSize
-	if bySize > math.MaxUint16 {
-		bySize = math.MaxUint16
-	}
-
-	ra.scootRight(curSize, bySize)
-	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
-	ra.keys.setNodeSize(int(curSize + bySize))
-
-	// All containers have moved to the right by bySize bytes.
-	// Update their offsets.
-	n := ra.keys
-	for i := 0; i < n.maxKeys(); i++ {
-		val := n.val(i)
-		if val > 0 {
-			n.setAt(valOffset(i), val+uint64(bySize))
-		}
-	}
-	return offset + bySize
-}
-
 func (ra *Bitmap) fastExpand(bySize uint64) {
 	prev := len(ra.keys) * 4 // Multiply by 4 to convert from u16 to u64.
 
@@ -705,29 +671,34 @@ func (ra *Bitmap) Split() (*Bitmap, *Bitmap) {
 		bySize := uint64((len(mp) * 2) * 4)
 		bm.scootRight(curSize, bySize)
 		bm.keys = toUint64Slice(bm.data[:curSize+bySize])
-		bm.keys.setNodeSize(int(curSize + bySize))
 		bm.keys.updateOffsets(curSize-1, bySize, true)
 
-		for _, key := range keys {
-			bm.setKey(key, 0)
+		numKeys := len(keys)
+		bm.keys.setNodeSize(int(curSize + bySize))
+
+		startIdx := 0
+		if _, ok := mp[0]; !ok {
+			startIdx = 1
+			numKeys++
 		}
+
+		idx := startIdx
+		for _, key := range keys {
+			bm.keys.setAt(keyOffset(idx), key)
+			idx++
+		}
+		bm.keys.setNumKeys(numKeys)
 
 		beforeSize := len(bm.data)
 		bm.scootRight(uint64(len(bm.data))-1, contSize)
 		bm.data = bm.data[:beforeSize]
-		for key, cont := range mp {
-			if getCardinality(cont) >= 4096 {
-				off := bm.newContainer(uint16(len(cont)))
-				copy(bm.data[off:], cont)
-				bm.setKey2(key, off)
-			}
-		}
-		for key, cont := range mp {
-			if getCardinality(cont) < 4096 {
-				off := bm.newContainer(uint16(len(cont)))
-				copy(bm.data[off:], cont)
-				bm.setKey2(key, off)
-			}
+		idx = startIdx
+		for _, key := range keys {
+			cont := mp[key]
+			off := bm.newContainer(uint16(len(cont)))
+			copy(bm.data[off:], cont)
+			bm.keys.setAt(valOffset(idx), off)
+			idx++
 		}
 		return bm
 	}
