@@ -151,6 +151,40 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	return offset + bySize
 }
 
+func (ra *Bitmap) setKey2(k uint64, offset uint64) uint64 {
+	if added := ra.keys.set(k, offset); !added {
+		// No new key was added. So, we can just return.
+		return offset
+	}
+	// A new key was added. Let's ensure that ra.keys is not full.
+	if !ra.keys.isFull() {
+		return offset
+	}
+	panic("why reaching here?")
+
+	// ra.keys is full. We should expand its size.
+	curSize := uint64(len(ra.keys) * 4) // Multiply by 4 for U64 -> U16.
+	bySize := curSize
+	if bySize > math.MaxUint16 {
+		bySize = math.MaxUint16
+	}
+
+	ra.scootRight(curSize, bySize)
+	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
+	ra.keys.setNodeSize(int(curSize + bySize))
+
+	// All containers have moved to the right by bySize bytes.
+	// Update their offsets.
+	n := ra.keys
+	for i := 0; i < n.maxKeys(); i++ {
+		val := n.val(i)
+		if val > 0 {
+			n.setAt(valOffset(i), val+uint64(bySize))
+		}
+	}
+	return offset + bySize
+}
+
 func (ra *Bitmap) fastExpand(bySize uint64) {
 	prev := len(ra.keys) * 4 // Multiply by 4 to convert from u16 to u64.
 
@@ -616,6 +650,7 @@ func (ra *Bitmap) Split() (*Bitmap, *Bitmap) {
 	}
 
 	var aSize, bSize uint64
+	var aKeys, bKeys []uint64
 	for i := 0; i < ra.keys.numKeys(); i++ {
 		key := ra.keys.key(i)
 		off := ra.keys.val(i)
@@ -625,6 +660,7 @@ func (ra *Bitmap) Split() (*Bitmap, *Bitmap) {
 		if cnt+c <= n/2 {
 			cnt += c
 			amap[key] = cont
+			aKeys = append(aKeys, key)
 			continue
 		}
 		idx = i
@@ -646,6 +682,8 @@ func (ra *Bitmap) Split() (*Bitmap, *Bitmap) {
 
 		aCont := createContainer(vals[:req])
 		bCont := createContainer(vals[req:])
+		aKeys = append(aKeys, key)
+		bKeys = append(bKeys, key)
 		amap[key] = aCont
 		bmap[key] = bCont
 		idx++
@@ -657,10 +695,11 @@ func (ra *Bitmap) Split() (*Bitmap, *Bitmap) {
 		off := ra.keys.val(i)
 		cont := ra.getContainer(off)
 		bSize += uint64(cont[indexSize])
+		bKeys = append(bKeys, key)
 		bmap[key] = cont
 	}
 
-	create := func(mp map[uint64][]uint16, contSize uint64) *Bitmap {
+	create := func(mp map[uint64][]uint16, contSize uint64, keys []uint64) *Bitmap {
 		bm := NewBitmap()
 		curSize := uint64(len(bm.keys) * 4)
 		bySize := uint64((len(mp) * 2) * 4)
@@ -669,13 +708,6 @@ func (ra *Bitmap) Split() (*Bitmap, *Bitmap) {
 		bm.keys.setNodeSize(int(curSize + bySize))
 		bm.keys.updateOffsets(curSize-1, bySize, true)
 
-		var keys []uint64
-		for key := range mp {
-			keys = append(keys, key)
-		}
-		sort.Slice(keys, func(i, j int) bool {
-			return keys[i] < keys[j]
-		})
 		for _, key := range keys {
 			bm.setKey(key, 0)
 		}
@@ -687,20 +719,20 @@ func (ra *Bitmap) Split() (*Bitmap, *Bitmap) {
 			if getCardinality(cont) >= 4096 {
 				off := bm.newContainer(uint16(len(cont)))
 				copy(bm.data[off:], cont)
-				bm.setKey(key, off)
+				bm.setKey2(key, off)
 			}
 		}
 		for key, cont := range mp {
 			if getCardinality(cont) < 4096 {
 				off := bm.newContainer(uint16(len(cont)))
 				copy(bm.data[off:], cont)
-				bm.setKey(key, off)
+				bm.setKey2(key, off)
 			}
 		}
 		return bm
 	}
-	a := create(amap, aSize)
-	b := create(bmap, bSize)
+	a := create(amap, aSize, aKeys)
+	b := create(bmap, bSize, bKeys)
 	return a, b
 }
 
