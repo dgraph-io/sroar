@@ -669,6 +669,10 @@ func (ra *Bitmap) Split() (*Bitmap, *Bitmap) {
 		bm.keys.setNodeSize(int(curSize + bySize))
 		bm.keys.updateOffsets(curSize-1, bySize, true)
 
+		for key := range mp {
+			bm.setKey(key, 0)
+		}
+
 		beforeSize := len(bm.data)
 		bm.scootRight(uint64(len(bm.data))-1, contSize)
 		bm.data = bm.data[:beforeSize]
