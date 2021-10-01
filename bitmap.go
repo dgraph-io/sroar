@@ -135,7 +135,7 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 		bySize = math.MaxUint16
 	}
 
-	ra.scootRight(curSize, uint16(bySize))
+	ra.scootRight(curSize, bySize)
 	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
 	ra.keys.setNodeSize(int(curSize + bySize))
 
@@ -151,7 +151,7 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	return offset + bySize
 }
 
-func (ra *Bitmap) fastExpand(bySize uint16) {
+func (ra *Bitmap) fastExpand(bySize uint64) {
 	prev := len(ra.keys) * 4 // Multiply by 4 to convert from u16 to u64.
 
 	// This following statement also works. But, given how much fastExpand gets
@@ -177,7 +177,7 @@ func (ra *Bitmap) fastExpand(bySize uint16) {
 // scootRight isn't aware of containers. It's going to create empty space of
 // bySize at the given offset in ra.data. The offset doesn't need to line up
 // with a container.
-func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
+func (ra *Bitmap) scootRight(offset uint64, bySize uint64) {
 	left := ra.data[offset:]
 
 	ra.fastExpand(bySize) // Expand the buffer.
@@ -198,7 +198,7 @@ func (ra *Bitmap) scootLeft(offset uint64, size uint64) {
 
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
-	ra.fastExpand(sz)
+	ra.fastExpand(uint64(sz))
 	Memclr(ra.data[offset : offset+uint64(sz)])
 	ra.data[offset] = sz
 	return offset
@@ -223,7 +223,7 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 	}
 
 	// Select the portion to the right of the container, beyond its right boundary.
-	ra.scootRight(offset+uint64(sz), bySize)
+	ra.scootRight(offset+uint64(sz), uint64(bySize))
 	ra.keys.updateOffsets(offset, uint64(bySize), true)
 
 	if sz < 2048 {
@@ -274,7 +274,7 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 		assert(src[indexSize] == maxContainerSize)
 		bySize := uint16(maxContainerSize) - dstSize
 		// Select the portion to the right of the container, beyond its right boundary.
-		ra.scootRight(offset+uint64(dstSize), bySize)
+		ra.scootRight(offset+uint64(dstSize), uint64(bySize))
 		ra.keys.updateOffsets(offset, uint64(bySize), true)
 		assert(copy(ra.data[offset:], src) == len(src))
 		return
@@ -300,7 +300,7 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 
 		bySize := uint16(maxContainerSize) - dstSize
 		// Select the portion to the right of the container, beyond its right boundary.
-		ra.scootRight(offset+uint64(dstSize), bySize)
+		ra.scootRight(offset+uint64(dstSize), uint64(bySize))
 		ra.keys.updateOffsets(offset, uint64(bySize), true)
 
 		// Update the space of the container, so getContainer would work correctly.
@@ -315,7 +315,7 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 
 	// targetSize is not maxSize. Let's expand to targetSize and copy array.
 	bySize := targetSz - dstSize
-	ra.scootRight(offset+uint64(dstSize), bySize)
+	ra.scootRight(offset+uint64(dstSize), uint64(bySize))
 	ra.keys.updateOffsets(offset, uint64(bySize), true)
 	assert(copy(ra.data[offset:], src) == len(src))
 	ra.data[offset] = targetSz
@@ -590,32 +590,88 @@ func (ra *Bitmap) Split() (*Bitmap, *Bitmap) {
 	amap := make(map[uint64][]uint16)
 	bmap := make(map[uint64][]uint16)
 
+	createContainer := func(vals []uint16) []uint16 {
+		var buf []uint16
+		if len(vals) < 2048 {
+			// create array
+			sz := 8 + len(vals)
+			buf = make([]uint16, sz)
+			a := array(buf)
+			a[indexSize] = uint16(sz)
+			a[indexType] = typeArray
+			for _, v := range vals {
+				a.add(v)
+			}
+		} else {
+			// create bitmap
+			buf = make([]uint16, maxContainerSize)
+			b := bitmap(buf)
+			b[indexSize] = maxContainerSize
+			b[indexType] = typeBitmap
+			for _, v := range vals {
+				b.add(v)
+			}
+		}
+		return buf
+	}
+
+	var aSize, bSize uint64
 	for i := 0; i < ra.keys.numKeys(); i++ {
 		key := ra.keys.key(i)
 		off := ra.keys.val(i)
 		cont := ra.getContainer(off)
 		c := getCardinality(cont)
+		aSize += uint64(cont[indexSize])
 		if cnt+c <= n/2 {
 			cnt += c
 			amap[key] = cont
-		} else {
-			idx = i
-			break
+			continue
 		}
+		idx = i
+		break
+	}
+
+	req := n/2 - cnt
+	if req > 0 {
+		key := ra.keys.key(idx)
+		off := ra.keys.val(idx)
+		cont := ra.getContainer(off)
+		var vals []uint16
+		switch cont[indexType] {
+		case typeArray:
+			vals = array(cont).all()
+		case typeBitmap:
+			vals = bitmap(cont).all()
+		}
+
+		aCont := createContainer(vals[:req])
+		bCont := createContainer(vals[req:])
+		amap[key] = aCont
+		bmap[key] = bCont
+		idx++
 	}
 
 	// Add everything else to b
 	for i := idx; i < ra.keys.numKeys(); i++ {
 		key := ra.keys.key(i)
 		off := ra.keys.val(i)
-		bmap[key] = ra.getContainer(off)
+		cont := ra.getContainer(off)
+		bSize += uint64(cont[indexSize])
+		bmap[key] = cont
 	}
 
-	create := func(mp map[uint64][]uint16) *Bitmap {
+	create := func(mp map[uint64][]uint16, contSize uint64) *Bitmap {
 		bm := NewBitmap()
-		for key := range mp {
-			bm.setKey(key, 0)
-		}
+		curSize := uint64(len(bm.keys) * 4)
+		bySize := uint64((len(mp) * 2) * 4)
+		bm.scootRight(curSize, bySize)
+		bm.keys = toUint64Slice(bm.data[:curSize+bySize])
+		bm.keys.setNodeSize(int(curSize + bySize))
+		bm.keys.updateOffsets(curSize-1, bySize, true)
+
+		beforeSize := len(bm.data)
+		bm.scootRight(uint64(len(bm.data))-1, contSize)
+		bm.data = bm.data[:beforeSize]
 		for key, cont := range mp {
 			if getCardinality(cont) >= 4096 {
 				off := bm.newContainer(uint16(len(cont)))
@@ -632,9 +688,8 @@ func (ra *Bitmap) Split() (*Bitmap, *Bitmap) {
 		}
 		return bm
 	}
-
-	a := create(amap)
-	b := create(bmap)
+	a := create(amap, aSize)
+	b := create(bmap, bSize)
 	return a, b
 }
 

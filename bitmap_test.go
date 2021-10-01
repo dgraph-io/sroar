@@ -824,12 +824,31 @@ func TestRank(t *testing.T) {
 }
 
 func TestSplit(t *testing.T) {
+	run := func(n int) {
+		r := NewBitmap()
+		for i := 0; i < n; i++ {
+			r.Set(uint64(i))
+		}
+		a, b := r.Split()
+		require.Equal(t, n/2, a.GetCardinality())
+		require.Equal(t, n-n/2, b.GetCardinality())
+	}
+
+	run(10)
+	run(11)
+	run(1e3)
+	run(1e6)
+	run(1e7)
+}
+
+func BenchmarkSplit(b *testing.B) {
 	r := NewBitmap()
-	n := int(1e6)
+	n := int(1e7)
 	for i := 0; i < n; i++ {
 		r.Set(uint64(i))
 	}
-
-	a, b := r.Split()
-	require.Equal(t, n, a.GetCardinality()+b.GetCardinality())
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		r.Split()
+	}
 }
