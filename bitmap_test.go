@@ -404,6 +404,22 @@ func TestAnd(t *testing.T) {
 	require.Equal(t, 0, a.GetCardinality())
 }
 
+func TestAnd2(t *testing.T) {
+	a := NewBitmap()
+	n := int(1e7)
+
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i))
+	}
+	require.Equal(t, n, a.GetCardinality())
+	a.RemoveRange(0, uint64(n/2))
+
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i))
+	}
+	require.Equal(t, n, a.GetCardinality())
+}
+
 func TestAndNot(t *testing.T) {
 	a := NewBitmap()
 	b := NewBitmap()
@@ -807,18 +823,13 @@ func TestRank(t *testing.T) {
 	}
 }
 
-func TestAnd2(t *testing.T) {
-	a := NewBitmap()
-	n := int(1e7)
-
+func TestSplit(t *testing.T) {
+	r := NewBitmap()
+	n := int(1e6)
 	for i := 0; i < n; i++ {
-		a.Set(uint64(i))
+		r.Set(uint64(i))
 	}
-	require.Equal(t, n, a.GetCardinality())
-	a.RemoveRange(0, uint64(n/2))
 
-	for i := 0; i < n; i++ {
-		a.Set(uint64(i))
-	}
-	require.Equal(t, n, a.GetCardinality())
+	a, b := r.Split()
+	require.Equal(t, n, a.GetCardinality()+b.GetCardinality())
 }

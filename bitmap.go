@@ -583,6 +583,61 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	}
 }
 
+func (ra *Bitmap) Split() (*Bitmap, *Bitmap) {
+	n := ra.GetCardinality()
+	var cnt, idx int
+
+	amap := make(map[uint64][]uint16)
+	bmap := make(map[uint64][]uint16)
+
+	for i := 0; i < ra.keys.numKeys(); i++ {
+		key := ra.keys.key(i)
+		off := ra.keys.val(i)
+		cont := ra.getContainer(off)
+		c := getCardinality(cont)
+		if cnt+c <= n/2 {
+			cnt += c
+			amap[key] = cont
+		} else {
+			idx = i
+			break
+		}
+	}
+
+	// Add everything else to b
+	for i := idx; i < ra.keys.numKeys(); i++ {
+		key := ra.keys.key(i)
+		off := ra.keys.val(i)
+		bmap[key] = ra.getContainer(off)
+	}
+
+	create := func(mp map[uint64][]uint16) *Bitmap {
+		bm := NewBitmap()
+		for key := range mp {
+			bm.setKey(key, 0)
+		}
+		for key, cont := range mp {
+			if getCardinality(cont) >= 4096 {
+				off := bm.newContainer(uint16(len(cont)))
+				copy(bm.data[off:], cont)
+				bm.setKey(key, off)
+			}
+		}
+		for key, cont := range mp {
+			if getCardinality(cont) < 4096 {
+				off := bm.newContainer(uint16(len(cont)))
+				copy(bm.data[off:], cont)
+				bm.setKey(key, off)
+			}
+		}
+		return bm
+	}
+
+	a := create(amap)
+	b := create(bmap)
+	return a, b
+}
+
 func (ra *Bitmap) Reset() {
 	// reset ra.data to size enough for one container and corresponding key.
 	// 2 u64 is needed for header and another 2 u16 for the key 0.
