@@ -467,6 +467,23 @@ func TestAndNot(t *testing.T) {
 	}
 }
 
+func TestAndNot2(t *testing.T) {
+	a := NewBitmap()
+	b := NewBitmap()
+	n := int(1e6)
+
+	for i := 0; i < n/2; i++ {
+		a.Set(uint64(i))
+	}
+	for i := n / 2; i < n; i++ {
+		b.Set(uint64(i))
+	}
+	require.Equal(t, n/2, a.GetCardinality())
+	a.AndNot(b)
+	require.Equal(t, n/2, a.GetCardinality())
+
+}
+
 func TestOr(t *testing.T) {
 	a := NewBitmap()
 	b := NewBitmap()
@@ -832,8 +849,29 @@ func TestSplit(t *testing.T) {
 		a, b := r.Split()
 		require.Equal(t, n/2, a.GetCardinality())
 		require.Equal(t, n-n/2, b.GetCardinality())
+
+		aa := NewBitmap()
+		for _, e := range a.ToArray() {
+			aa.Set(uint64(e))
+		}
+		bb := NewBitmap()
+		for _, e := range b.ToArray() {
+			bb.Set(uint64(e))
+		}
+		aa.AndNot(bb)
+		require.Equal(t, n/2, aa.GetCardinality())
+
+		a.Or(b)
+		for i := 0; i < n; i++ {
+			require.True(t, a.Contains(uint64(i)))
+		}
+		require.Equal(t, n, a.GetCardinality())
+
+		a.AndNot(b)
+		require.Equal(t, n/2, a.GetCardinality())
 	}
 
+	run(2)
 	run(10)
 	run(11)
 	run(1e3)
