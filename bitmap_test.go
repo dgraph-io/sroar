@@ -404,6 +404,22 @@ func TestAnd(t *testing.T) {
 	require.Equal(t, 0, a.GetCardinality())
 }
 
+func TestAnd2(t *testing.T) {
+	a := NewBitmap()
+	n := int(1e7)
+
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i))
+	}
+	require.Equal(t, n, a.GetCardinality())
+	a.RemoveRange(0, uint64(n/2))
+
+	for i := 0; i < n; i++ {
+		a.Set(uint64(i))
+	}
+	require.Equal(t, n, a.GetCardinality())
+}
+
 func TestAndNot(t *testing.T) {
 	a := NewBitmap()
 	b := NewBitmap()
@@ -449,6 +465,23 @@ func TestAndNot(t *testing.T) {
 			require.True(t, a.Contains(uint64(i)))
 		}
 	}
+}
+
+func TestAndNot2(t *testing.T) {
+	a := NewBitmap()
+	b := NewBitmap()
+	n := int(1e6)
+
+	for i := 0; i < n/2; i++ {
+		a.Set(uint64(i))
+	}
+	for i := n / 2; i < n; i++ {
+		b.Set(uint64(i))
+	}
+	require.Equal(t, n/2, a.GetCardinality())
+	a.AndNot(b)
+	require.Equal(t, n/2, a.GetCardinality())
+
 }
 
 func TestOr(t *testing.T) {
@@ -805,20 +838,4 @@ func TestRank(t *testing.T) {
 			require.Equal(t, i-1e4, a.Rank(uint64(i)))
 		}
 	}
-}
-
-func TestAnd2(t *testing.T) {
-	a := NewBitmap()
-	n := int(1e7)
-
-	for i := 0; i < n; i++ {
-		a.Set(uint64(i))
-	}
-	require.Equal(t, n, a.GetCardinality())
-	a.RemoveRange(0, uint64(n/2))
-
-	for i := 0; i < n; i++ {
-		a.Set(uint64(i))
-	}
-	require.Equal(t, n, a.GetCardinality())
 }

@@ -290,10 +290,16 @@ func (c array) andBitmap(other bitmap) []uint16 {
 
 // TODO: Write an optmized version of this function.
 func (c array) andNotBitmap(other bitmap, buf []uint16) []uint16 {
-	// TODO: Iterate over the array and just check if the element is present in the bitmap.
-	// TODO: This won't work, because we're using buf wrong here.
-	bm := c.toBitmapContainer(nil)
-	return bitmap(bm).andNotBitmap(other, buf)
+	assert(len(buf) == maxContainerSize)
+	res := array(buf)
+	Memclr(res)
+	res[indexSize] = 4
+	for _, e := range c.all() {
+		if !other.has(e) {
+			res.add(e)
+		}
+	}
+	return res
 }
 
 func (c array) isFull() bool {
@@ -505,19 +511,22 @@ func (b bitmap) orBitmap(other bitmap, buf []uint16, runMode int) []uint16 {
 	return buf
 }
 
-func (b bitmap) andNotBitmap(other bitmap, buf []uint16) []uint16 {
-	copy(buf, b) // Copy over first.
-	buf[indexSize] = maxContainerSize
-	buf[indexType] = typeBitmap
-
+func (b bitmap) andNotBitmap(other bitmap) []uint16 {
 	var num int
-	data := buf[startIdx:]
+	data := b[startIdx:]
 	for i, v := range other[startIdx:] {
 		data[i] = data[i] ^ (data[i] & v)
 		num += bits.OnesCount16(data[i])
 	}
-	setCardinality(buf, num)
-	return buf
+	setCardinality(b, num)
+	return b
+}
+
+func (b bitmap) andNotArray(other array) []uint16 {
+	for _, e := range other.all() {
+		b.remove(e)
+	}
+	return b
 }
 
 func (b bitmap) orArray(other array, buf []uint16, runMode int) []uint16 {
@@ -745,13 +754,13 @@ func containerAndNot(ac, bc, buf []uint16) []uint16 {
 	if at == typeBitmap && bt == typeArray {
 		left := bitmap(ac)
 		right := array(bc)
-		out := right.andNotBitmap(left, buf)
+		out := left.andNotArray(right)
 		return out
 	}
 	if at == typeBitmap && bt == typeBitmap {
 		left := bitmap(ac)
 		right := bitmap(bc)
-		return left.andNotBitmap(right, buf)
+		return left.andNotBitmap(right)
 	}
 	panic("containerAndNot: We should not reach here")
 }
