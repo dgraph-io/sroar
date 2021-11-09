@@ -1237,10 +1237,11 @@ func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bit
 		newBm := NewBitmap()
 		var sz uint64
 		var bms []*Bitmap
-		for id := itr.Next(); id != 0; id = itr.Next() {
+		for i := 0; i < b.GetCardinality(); i++ {
+			id := itr.Next()
 			sz += fn(id, id+1)
 			newBm.Set(id)
-			if sz > maxSz {
+			if sz >= maxSz {
 				bms = append(bms, newBm)
 				newBm = NewBitmap()
 				sz = 0
@@ -1296,6 +1297,7 @@ func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bit
 		contMap[key] = cont
 		contSz = csz
 		totalSz = total
+		card = 0
 	}
 	splits = append(splits, create(contMap, contSz))
 
