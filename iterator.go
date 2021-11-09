@@ -162,24 +162,70 @@ func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bit
 		}
 	}
 
+	var result []*Bitmap
+	create := func(mp map[uint64][]uint16, contSize uint64, keys []uint64) *Bitmap {
+		newBm := NewBitmap()
+		curSize := uint64(len(newBm.keys) * 4)
+		bySize := uint64((len(mp) * 2) * 4)
+		newBm.scootRight(curSize, bySize)
+		newBm.keys = toUint64Slice(newBm.data[:curSize+bySize])
+		newBm.keys.updateOffsets(curSize-1, bySize, true)
+
+		numKeys := len(keys)
+		newBm.keys.setNodeSize(int(curSize + bySize))
+
+		startIdx := 0
+		if _, ok := mp[0]; !ok {
+			startIdx = 1
+			numKeys++
+		}
+
+		idx := startIdx
+		for _, key := range keys {
+			newBm.keys.setAt(keyOffset(idx), key)
+			idx++
+		}
+		newBm.keys.setNumKeys(numKeys)
+
+		beforeSize := len(newBm.data)
+		newBm.scootRight(uint64(len(newBm.data))-1, contSize)
+		newBm.data = newBm.data[:beforeSize]
+		idx = startIdx
+		for _, key := range keys {
+			cont := mp[key]
+			off := newBm.newContainer(uint16(len(cont)))
+			copy(newBm.data[off:], cont)
+			newBm.keys.setAt(valOffset(idx), off)
+			idx++
+		}
+		return newBm
+	}
+
 	// splitList index
 	curIdx := 0
 	bmMap := make(map[uint64][]uint16)
+	curSize := uint64(0) // size of contaainers considered in a bitmap created by split
 	for i := 0; i < bm.keys.numKeys(); i++ {
 		if key := bm.keys.key(i); key < splitList[curIdx] {
 			cont := bm.getContainer(bm.keys.val(i))
+			curSize += uint64(cont[indexSize])
 			bmMap[key] = cont
 			continue
 		}
 
 		var keys []uint64
-		for key, _ := range bmMap {
+		for key := range bmMap {
 			keys = append(keys, key)
 		}
 
 		sort.Slice(keys, func(i, j int) bool {
 			return keys[i] < keys[j]
 		})
+
+		result = append(result, create(bmMap, curSize, keys))
+		bmMap = make(map[uint64][]uint16)
+		curSize = 0
 	}
 
+	return result
 }

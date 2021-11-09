@@ -135,7 +135,7 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 		bySize = math.MaxUint16
 	}
 
-	ra.scootRight(curSize, uint16(bySize))
+	ra.scootRight(curSize, bySize)
 	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
 	ra.keys.setNodeSize(int(curSize + bySize))
 
@@ -151,7 +151,7 @@ func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	return offset + bySize
 }
 
-func (ra *Bitmap) fastExpand(bySize uint16) {
+func (ra *Bitmap) fastExpand(bySize uint64) {
 	prev := len(ra.keys) * 4 // Multiply by 4 to convert from u16 to u64.
 
 	// This following statement also works. But, given how much fastExpand gets
@@ -177,7 +177,7 @@ func (ra *Bitmap) fastExpand(bySize uint16) {
 // scootRight isn't aware of containers. It's going to create empty space of
 // bySize at the given offset in ra.data. The offset doesn't need to line up
 // with a container.
-func (ra *Bitmap) scootRight(offset uint64, bySize uint16) {
+func (ra *Bitmap) scootRight(offset uint64, bySize uint64) {
 	left := ra.data[offset:]
 
 	ra.fastExpand(bySize) // Expand the buffer.
@@ -198,7 +198,7 @@ func (ra *Bitmap) scootLeft(offset uint64, size uint64) {
 
 func (ra *Bitmap) newContainer(sz uint16) uint64 {
 	offset := uint64(len(ra.data))
-	ra.fastExpand(sz)
+	ra.fastExpand(uint64(sz))
 	Memclr(ra.data[offset : offset+uint64(sz)])
 	ra.data[offset] = sz
 	return offset
@@ -223,7 +223,7 @@ func (ra *Bitmap) expandContainer(offset uint64) {
 	}
 
 	// Select the portion to the right of the container, beyond its right boundary.
-	ra.scootRight(offset+uint64(sz), bySize)
+	ra.scootRight(offset+uint64(sz), uint64(bySize))
 	ra.keys.updateOffsets(offset, uint64(bySize), true)
 
 	if sz < 2048 {
@@ -274,7 +274,7 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 		assert(src[indexSize] == maxContainerSize)
 		bySize := uint16(maxContainerSize) - dstSize
 		// Select the portion to the right of the container, beyond its right boundary.
-		ra.scootRight(offset+uint64(dstSize), bySize)
+		ra.scootRight(offset+uint64(dstSize), uint64(bySize))
 		ra.keys.updateOffsets(offset, uint64(bySize), true)
 		assert(copy(ra.data[offset:], src) == len(src))
 		return
@@ -300,7 +300,7 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 
 		bySize := uint16(maxContainerSize) - dstSize
 		// Select the portion to the right of the container, beyond its right boundary.
-		ra.scootRight(offset+uint64(dstSize), bySize)
+		ra.scootRight(offset+uint64(dstSize), uint64(bySize))
 		ra.keys.updateOffsets(offset, uint64(bySize), true)
 
 		// Update the space of the container, so getContainer would work correctly.
@@ -315,7 +315,7 @@ func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 
 	// targetSize is not maxSize. Let's expand to targetSize and copy array.
 	bySize := targetSz - dstSize
-	ra.scootRight(offset+uint64(dstSize), bySize)
+	ra.scootRight(offset+uint64(dstSize), uint64(bySize))
 	ra.keys.updateOffsets(offset, uint64(bySize), true)
 	assert(copy(ra.data[offset:], src) == len(src))
 	ra.data[offset] = targetSz
