@@ -1297,7 +1297,7 @@ func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bit
 		contMap[key] = cont
 		contSz = csz
 		totalSz = total
-		card = 0
+		card = uint64(getCardinality(cont))
 	}
 	splits = append(splits, create(contMap, contSz))
 
