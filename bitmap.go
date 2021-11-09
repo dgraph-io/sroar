@@ -1232,11 +1232,33 @@ func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bit
 		return newBm
 	}
 
+	splitFurther := func(b *Bitmap) []*Bitmap {
+		itr := b.NewIterator()
+		newBm := NewBitmap()
+		var sz uint64
+		var bms []*Bitmap
+		for id := itr.Next(); id != 0; id = itr.Next() {
+			sz += fn(id, id+1)
+			newBm.Set(id)
+			if sz > maxSz {
+				bms = append(bms, newBm)
+				newBm = NewBitmap()
+				sz = 0
+			}
+		}
+
+		if !newBm.IsEmpty() {
+			bms = append(bms, newBm)
+		}
+		return bms
+	}
+
 	var splits []*Bitmap
 
 	contMap := make(map[uint64][]uint16)
 	var contSz uint64  // size of containers considered in a bitmap created by split
 	var totalSz uint64 // size of containers plus the external size of the container
+	var card uint64
 
 	for i := 0; i < bm.keys.numKeys(); i++ {
 		key := bm.keys.key(i)
@@ -1253,11 +1275,22 @@ func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bit
 			contMap[key] = cont
 			contSz += csz
 			totalSz += total
+			card += uint64(getCardinality(cont))
 			continue
 		}
 
 		// We have reached the maxSz limit. Hence, create a split.
-		splits = append(splits, create(contMap, contSz))
+		var newBms []*Bitmap
+		newBm := create(contMap, contSz)
+
+		if totalSz > maxSz && card > 1 {
+			// make further splits
+			newBms = splitFurther(newBm)
+
+		} else {
+			newBms = []*Bitmap{newBm}
+		}
+		splits = append(splits, newBms...)
 
 		contMap = make(map[uint64][]uint16)
 		contMap[key] = cont
