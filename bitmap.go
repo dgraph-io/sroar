@@ -1184,3 +1184,98 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 
 	return dst
 }
+
+func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bitmap {
+	var splitIds []uint64
+	var cumSz uint64
+	var prevEnd uint64
+	for i := 0; i < bm.keys.numKeys(); i++ {
+		key := bm.keys.key(i)
+		off := bm.keys.val(i)
+
+		cont := bm.getContainer(off)
+		start := key
+		end := start + 1<<16
+
+		psz := fn(start, end)
+		cumSz += psz + uint64(cont[indexSize])
+		if cumSz >= maxSz && prevEnd > 0 {
+			splitIds = append(splitIds, prevEnd)
+			cumSz = 0
+		}
+		prevEnd = end
+	}
+	splitIds = append(splitIds, math.MaxUint64)
+
+	var result []*Bitmap
+	create := func(mp map[uint64][]uint16, contSize uint64) *Bitmap {
+		var keys []uint64
+		for key := range mp {
+			keys = append(keys, key)
+		}
+
+		sort.Slice(keys, func(i, j int) bool {
+			return keys[i] < keys[j]
+		})
+
+		newBm := NewBitmap()
+		curSize := uint64(len(newBm.keys) * 4)
+		bySize := uint64((len(mp) * 2) * 4)
+		newBm.scootRight(curSize, bySize)
+		newBm.keys = toUint64Slice(newBm.data[:curSize+bySize])
+		newBm.keys.updateOffsets(curSize-1, bySize, true)
+
+		numKeys := len(keys)
+		newBm.keys.setNodeSize(int(curSize + bySize))
+
+		startIdx := 0
+		if _, ok := mp[0]; !ok {
+			startIdx = 1
+			numKeys++
+		}
+
+		idx := startIdx
+		for _, key := range keys {
+			newBm.keys.setAt(keyOffset(idx), key)
+			idx++
+		}
+		newBm.keys.setNumKeys(numKeys)
+
+		beforeSize := len(newBm.data)
+		newBm.scootRight(uint64(len(newBm.data))-1, contSize)
+		newBm.data = newBm.data[:beforeSize]
+		idx = startIdx
+		for _, key := range keys {
+			cont := mp[key]
+			off := newBm.newContainer(uint16(len(cont)))
+			copy(newBm.data[off:], cont)
+			newBm.keys.setAt(valOffset(idx), off)
+			idx++
+		}
+		return newBm
+	}
+
+	// splitList index
+	curIdx := 0
+	bmMap := make(map[uint64][]uint16)
+	curSize := uint64(0) // size of contaainers considered in a bitmap created by split
+	for i := 0; i < bm.keys.numKeys(); i++ {
+		key := bm.keys.key(i)
+		cont := bm.getContainer(bm.keys.val(i))
+		contSz := uint64(cont[indexSize])
+		if key < splitIds[curIdx] {
+			curSize += contSz
+			bmMap[key] = cont
+			continue
+		}
+
+		result = append(result, create(bmMap, curSize))
+		bmMap = make(map[uint64][]uint16)
+		bmMap[key] = cont
+		curSize = contSz
+		curIdx += 1
+	}
+	result = append(result, create(bmMap, curSize))
+
+	return result
+}

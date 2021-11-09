@@ -839,3 +839,53 @@ func TestRank(t *testing.T) {
 		}
 	}
 }
+
+func TestSplit(t *testing.T) {
+	run := func(n int) {
+		r := NewBitmap()
+		for i := 0; i < n; i++ {
+			r.Set(uint64(i))
+		}
+		f := func(start, end uint64) uint64 {
+			return 0
+		}
+		bms := r.NSplit(f, 1<<10)
+
+		var csum int
+		t.Logf("Count: %d\n", len(bms))
+		for _, bm := range bms {
+			// t.Logf("bm: %s\n", bm.String())
+			csum += bm.GetCardinality()
+		}
+		require.Equal(t, n, csum)
+		// require.Equal(t, n/2, a.GetCardinality())
+		// require.Equal(t, n-n/2, b.GetCardinality())
+
+		// aa := NewBitmap()
+		// for _, e := range a.ToArray() {
+		// 	aa.Set(uint64(e))
+		// }
+		// bb := NewBitmap()
+		// for _, e := range b.ToArray() {
+		// 	bb.Set(uint64(e))
+		// }
+		// aa.AndNot(bb)
+		// require.Equal(t, n/2, aa.GetCardinality())
+
+		// a.Or(b)
+		// for i := 0; i < n; i++ {
+		// 	require.True(t, a.Contains(uint64(i)))
+		// }
+		// require.Equal(t, n, a.GetCardinality())
+
+		// a.AndNot(b)
+		// require.Equal(t, n/2, a.GetCardinality())
+	}
+
+	run(2)
+	run(10)
+	run(11)
+	run(1e3)
+	run(1e6)
+	run(1e7)
+}
