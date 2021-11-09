@@ -34,6 +34,9 @@ type Bitmap struct {
 	data []uint16
 	keys node
 
+	// This _ptr is only used when we start with a []byte instead of a
+	// []uint16. Because we do an unsafe conversion to []uint16 data, and hence,
+	// do NOT own a valid pointer to the underlying array.
 	_ptr []byte
 
 	// memMoved keeps track of how many uint16 moves we had to do. The smaller
@@ -44,6 +47,7 @@ type Bitmap struct {
 // FromBuffer returns a pointer to bitmap corresponding to the given buffer. This bitmap shouldn't
 // be modified because it might corrupt the given buffer.
 func FromBuffer(data []byte) *Bitmap {
+	assert(len(data)%2 == 0)
 	if len(data) < 8 {
 		return NewBitmap()
 	}
@@ -51,26 +55,26 @@ func FromBuffer(data []byte) *Bitmap {
 	x := toUint64Slice(du[:4])[indexNodeSize]
 	return &Bitmap{
 		data: du,
-		_ptr: data,
+		_ptr: data, // Keep a hold of data, otherwise GC would do its thing.
 		keys: toUint64Slice(du[:x]),
 	}
 }
 
 // FromBufferWithCopy creates a copy of the given buffer and returns a bitmap based on the copied
 // buffer. This bitmap is safe for both read and write operations.
-func FromBufferWithCopy(data []byte) *Bitmap {
-	if len(data) < 8 {
+func FromBufferWithCopy(src []byte) *Bitmap {
+	assert(len(src)%2 == 0)
+	if len(src) < 8 {
 		return NewBitmap()
 	}
-	dup := make([]byte, len(data))
-	copy(dup, data)
-	du := toUint16Slice(dup)
-	x := toUint64Slice(du[:4])[indexNodeSize]
+	src16 := toUint16Slice(src)
+	dst16 := make([]uint16, len(src16))
+	copy(dst16, src16)
+	x := toUint64Slice(dst16[:4])[indexNodeSize]
 
 	return &Bitmap{
-		data: du,
-		_ptr: dup,
-		keys: toUint64Slice(du[:x]),
+		data: dst16,
+		keys: toUint64Slice(dst16[:x]),
 	}
 }
 
@@ -170,6 +174,7 @@ func (ra *Bitmap) fastExpand(bySize uint64) {
 	out := make([]uint16, cap(ra.data)+growBy)
 	copy(out, ra.data)
 	ra.data = out[:toSize]
+	ra._ptr = nil // Allow Go to GC whatever this was pointing to.
 	// Re-reference ra.keys correctly because underlying array has changed.
 	ra.keys = toUint64Slice(ra.data[:prev])
 }
@@ -1185,10 +1190,10 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	return dst
 }
 
-func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bitmap {
-	create := func(mp map[uint64][]uint16, contSize uint64) *Bitmap {
+func (bm *Bitmap) NSplit(externalSize func(start, end uint64) uint64, maxSz uint64) []*Bitmap {
+	create := func(keyToOffset map[uint64]uint64) *Bitmap {
 		var keys []uint64
-		for key := range mp {
+		for key := range keyToOffset {
 			keys = append(keys, key)
 		}
 		sort.Slice(keys, func(i, j int) bool {
@@ -1196,38 +1201,29 @@ func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bit
 		})
 
 		newBm := NewBitmap()
-		curSize := uint64(len(newBm.keys) * 4)
-		bySize := uint64((len(mp) * 2) * 4)
-		newBm.scootRight(curSize, bySize)
-		newBm.keys = toUint64Slice(newBm.data[:curSize+bySize])
-		newBm.keys.updateOffsets(curSize-1, bySize, true)
 
-		numKeys := len(keys)
-		newBm.keys.setNodeSize(int(curSize + bySize))
-
-		startIdx := 0
-		if _, ok := mp[0]; !ok {
-			startIdx = 1
-			numKeys++
-		}
-
-		idx := startIdx
+		// First set all the keys.
+		var totalSz uint64
 		for _, key := range keys {
-			newBm.keys.setAt(keyOffset(idx), key)
-			idx++
-		}
-		newBm.keys.setNumKeys(numKeys)
+			newBm.setKey(key, 0)
 
+			// Calculate the size of the containers.
+			cont := bm.getContainer(keyToOffset[key])
+			totalSz += uint64(len(cont))
+		}
+		// Allocate enough space to hold all the containers.
 		beforeSize := len(newBm.data)
-		newBm.scootRight(uint64(len(newBm.data))-1, contSize)
+		newBm.fastExpand(totalSz)
 		newBm.data = newBm.data[:beforeSize]
-		idx = startIdx
+
+		// Now, we can populate the containers. For that, we first expand the
+		// bitmap. Calculate the total size we need to allocate all these containers.
 		for _, key := range keys {
-			cont := mp[key]
+			cont := bm.getContainer(keyToOffset[key])
 			off := newBm.newContainer(uint16(len(cont)))
 			copy(newBm.data[off:], cont)
-			newBm.keys.setAt(valOffset(idx), off)
-			idx++
+
+			newBm.setKey(key, off)
 		}
 		return newBm
 	}
@@ -1237,9 +1233,10 @@ func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bit
 		newBm := NewBitmap()
 		var sz uint64
 		var bms []*Bitmap
+		// for id != 0 { // That is what's needed here.
 		for i := 0; i < b.GetCardinality(); i++ {
 			id := itr.Next()
-			sz += fn(id, id+1)
+			sz += externalSize(id, id+1)
 			newBm.Set(id)
 			if sz >= maxSz {
 				bms = append(bms, newBm)
@@ -1256,8 +1253,7 @@ func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bit
 
 	var splits []*Bitmap
 
-	contMap := make(map[uint64][]uint16)
-	var contSz uint64  // size of containers considered in a bitmap created by split
+	containerMap := make(map[uint64]uint64)
 	var totalSz uint64 // size of containers plus the external size of the container
 	var card uint64
 
@@ -1267,25 +1263,25 @@ func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bit
 		cont := bm.getContainer(off)
 
 		start, end := key, key+1<<16
-		esz := fn(start, end)
-		csz := uint64(cont[indexSize])
-		total := esz + csz
+		sz := externalSize(start, end) + uint64(cont[indexSize])
 
 		// We can probably append more containers in the same bucket.
-		if contSz+totalSz < maxSz {
-			contMap[key] = cont
-			contSz += csz
-			totalSz += total
+		if totalSz+sz < maxSz {
+			// Include this container in the container map.
+			containerMap[key] = off
+			totalSz += sz
 			card += uint64(getCardinality(cont))
 			continue
 		}
 
 		// We have reached the maxSz limit. Hence, create a split.
 		var newBms []*Bitmap
-		newBm := create(contMap, contSz)
+		newBm := create(containerMap)
 
 		if totalSz > maxSz && card > 1 {
-			// make further splits
+			// Cardinality can be one, because a single posting is really big.
+			// So, we can't split it further in that case. Make further splits
+			// if cardinality is 2 or more.
 			newBms = splitFurther(newBm)
 
 		} else {
@@ -1293,13 +1289,14 @@ func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bit
 		}
 		splits = append(splits, newBms...)
 
-		contMap = make(map[uint64][]uint16)
-		contMap[key] = cont
-		contSz = csz
-		totalSz = total
+		containerMap = make(map[uint64]uint64)
+		containerMap[key] = off
+		totalSz = sz
 		card = uint64(getCardinality(cont))
 	}
-	splits = append(splits, create(contMap, contSz))
+	if len(containerMap) > 0 {
+		splits = append(splits, create(containerMap))
+	}
 
 	return splits
 }
