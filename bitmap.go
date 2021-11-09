@@ -1186,34 +1186,11 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 }
 
 func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bitmap {
-	var splitIds []uint64
-	var cumSz uint64
-	var prevEnd uint64
-	for i := 0; i < bm.keys.numKeys(); i++ {
-		key := bm.keys.key(i)
-		off := bm.keys.val(i)
-
-		cont := bm.getContainer(off)
-		start := key
-		end := start + 1<<16
-
-		psz := fn(start, end)
-		cumSz += psz + uint64(cont[indexSize])
-		if cumSz >= maxSz && prevEnd > 0 {
-			splitIds = append(splitIds, prevEnd)
-			cumSz = 0
-		}
-		prevEnd = end
-	}
-	splitIds = append(splitIds, math.MaxUint64)
-
-	var result []*Bitmap
 	create := func(mp map[uint64][]uint16, contSize uint64) *Bitmap {
 		var keys []uint64
 		for key := range mp {
 			keys = append(keys, key)
 		}
-
 		sort.Slice(keys, func(i, j int) bool {
 			return keys[i] < keys[j]
 		})
@@ -1255,27 +1232,39 @@ func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bit
 		return newBm
 	}
 
-	// splitList index
-	curIdx := 0
-	bmMap := make(map[uint64][]uint16)
-	curSize := uint64(0) // size of contaainers considered in a bitmap created by split
+	var splits []*Bitmap
+
+	contMap := make(map[uint64][]uint16)
+	var contSz uint64  // size of containers considered in a bitmap created by split
+	var totalSz uint64 // size of containers plus the external size of the container
+
 	for i := 0; i < bm.keys.numKeys(); i++ {
 		key := bm.keys.key(i)
-		cont := bm.getContainer(bm.keys.val(i))
-		contSz := uint64(cont[indexSize])
-		if key < splitIds[curIdx] {
-			curSize += contSz
-			bmMap[key] = cont
+		off := bm.keys.val(i)
+		cont := bm.getContainer(off)
+
+		start, end := key, key+1<<16
+		esz := fn(start, end)
+		csz := uint64(cont[indexSize])
+		total := esz + csz
+
+		// We can probably append more containers in the same bucket.
+		if contSz+totalSz < maxSz {
+			contMap[key] = cont
+			contSz += csz
+			totalSz += total
 			continue
 		}
 
-		result = append(result, create(bmMap, curSize))
-		bmMap = make(map[uint64][]uint16)
-		bmMap[key] = cont
-		curSize = contSz
-		curIdx += 1
-	}
-	result = append(result, create(bmMap, curSize))
+		// We have reached the maxSz limit. Hence, create a split.
+		splits = append(splits, create(contMap, contSz))
 
-	return result
+		contMap = make(map[uint64][]uint16)
+		contMap[key] = cont
+		contSz = csz
+		totalSz = total
+	}
+	splits = append(splits, create(contMap, contSz))
+
+	return splits
 }
