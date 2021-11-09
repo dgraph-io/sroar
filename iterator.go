@@ -18,6 +18,7 @@ package sroar
 
 import (
 	"math/bits"
+	"sort"
 )
 
 type Iterator struct {
@@ -138,4 +139,47 @@ func (itr *ManyItr) NextMany(buf []uint64) int {
 		count++
 	}
 	return count
+}
+
+func (bm *Bitmap) NSplit(fn func(start, end uint64) uint64, maxSz uint64) []*Bitmap {
+	var splitList []uint64
+	var cumSz uint64
+	var curStart uint64
+	for i := 0; i < bm.keys.numKeys(); i++ {
+		key := bm.keys.key(i)
+		off := bm.keys.val(i)
+
+		cont := bm.getContainer(off)
+		start := key
+		end := start + 1<<16
+
+		psz := fn(start, end)
+		cumSz += psz + uint64(cont[indexSize])
+		if cumSz >= maxSz {
+			splitList = append(splitList, curStart)
+			curStart = start
+			cumSz = 0
+		}
+	}
+
+	// splitList index
+	curIdx := 0
+	bmMap := make(map[uint64][]uint16)
+	for i := 0; i < bm.keys.numKeys(); i++ {
+		if key := bm.keys.key(i); key < splitList[curIdx] {
+			cont := bm.getContainer(bm.keys.val(i))
+			bmMap[key] = cont
+			continue
+		}
+
+		var keys []uint64
+		for key, _ := range bmMap {
+			keys = append(keys, key)
+		}
+
+		sort.Slice(keys, func(i, j int) bool {
+			return keys[i] < keys[j]
+		})
+	}
+
 }
