@@ -1233,9 +1233,7 @@ func (bm *Bitmap) NSplit(externalSize func(start, end uint64) uint64, maxSz uint
 		newBm := NewBitmap()
 		var sz uint64
 		var bms []*Bitmap
-		// for id != 0 { // That is what's needed here.
-		for i := 0; i < b.GetCardinality(); i++ {
-			id := itr.Next()
+		for id := itr.Next(); id != 0; id = itr.Next() {
 			sz += externalSize(id, id+1)
 			newBm.Set(id)
 			if sz >= maxSz {
