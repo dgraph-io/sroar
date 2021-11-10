@@ -1268,7 +1268,7 @@ func (bm *Bitmap) NSplit(externalSize func(start, end uint64) uint64, maxSz uint
 		sz := externalSize(start, end) + uint64(cont[indexSize])
 
 		// We can probably append more containers in the same bucket.
-		if totalSz+sz < maxSz {
+		if totalSz+sz < maxSz || len(containerMap) == 0 {
 			// Include this container in the container map.
 			containerMap[key] = off
 			totalSz += sz
