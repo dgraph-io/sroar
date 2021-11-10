@@ -1247,6 +1247,10 @@ func (bm *Bitmap) NSplit(externalSize func(start, end uint64) uint64, maxSz uint
 			newBm.setKey(key, off)
 		}
 
+		if newBm.GetCardinality() == 0 {
+			return nil
+		}
+
 		if totalSz > maxSz {
 			return splitFurther(newBm)
 		}
