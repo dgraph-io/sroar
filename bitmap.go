@@ -1191,43 +1191,6 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 }
 
 func (bm *Bitmap) NSplit(externalSize func(start, end uint64) uint64, maxSz uint64) []*Bitmap {
-	create := func(keyToOffset map[uint64]uint64) *Bitmap {
-		var keys []uint64
-		for key := range keyToOffset {
-			keys = append(keys, key)
-		}
-		sort.Slice(keys, func(i, j int) bool {
-			return keys[i] < keys[j]
-		})
-
-		newBm := NewBitmap()
-
-		// First set all the keys.
-		var totalSz uint64
-		for _, key := range keys {
-			newBm.setKey(key, 0)
-
-			// Calculate the size of the containers.
-			cont := bm.getContainer(keyToOffset[key])
-			totalSz += uint64(len(cont))
-		}
-		// Allocate enough space to hold all the containers.
-		beforeSize := len(newBm.data)
-		newBm.fastExpand(totalSz)
-		newBm.data = newBm.data[:beforeSize]
-
-		// Now, we can populate the containers. For that, we first expand the
-		// bitmap. Calculate the total size we need to allocate all these containers.
-		for _, key := range keys {
-			cont := bm.getContainer(keyToOffset[key])
-			off := newBm.newContainer(uint16(len(cont)))
-			copy(newBm.data[off:], cont)
-
-			newBm.setKey(key, off)
-		}
-		return newBm
-	}
-
 	splitFurther := func(b *Bitmap) []*Bitmap {
 		itr := b.NewIterator()
 		newBm := NewBitmap()
@@ -1249,11 +1212,52 @@ func (bm *Bitmap) NSplit(externalSize func(start, end uint64) uint64, maxSz uint
 		return bms
 	}
 
+	create := func(keyToOffset map[uint64]uint64, totalSz uint64) []*Bitmap {
+		var keys []uint64
+		for key := range keyToOffset {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(i, j int) bool {
+			return keys[i] < keys[j]
+		})
+
+		newBm := NewBitmap()
+
+		// First set all the keys.
+		var containerSz uint64
+		for _, key := range keys {
+			newBm.setKey(key, 0)
+
+			// Calculate the size of the containers.
+			cont := bm.getContainer(keyToOffset[key])
+			containerSz += uint64(len(cont))
+		}
+		// Allocate enough space to hold all the containers.
+		beforeSize := len(newBm.data)
+		newBm.fastExpand(containerSz)
+		newBm.data = newBm.data[:beforeSize]
+
+		// Now, we can populate the containers. For that, we first expand the
+		// bitmap. Calculate the total size we need to allocate all these containers.
+		for _, key := range keys {
+			cont := bm.getContainer(keyToOffset[key])
+			off := newBm.newContainer(uint16(len(cont)))
+			copy(newBm.data[off:], cont)
+
+			newBm.setKey(key, off)
+		}
+
+		if totalSz > maxSz {
+			return splitFurther(newBm)
+		}
+
+		return []*Bitmap{newBm}
+	}
+
 	var splits []*Bitmap
 
 	containerMap := make(map[uint64]uint64)
 	var totalSz uint64 // size of containers plus the external size of the container
-	var card uint64
 
 	for i := 0; i < bm.keys.numKeys(); i++ {
 		key := bm.keys.key(i)
@@ -1268,32 +1272,18 @@ func (bm *Bitmap) NSplit(externalSize func(start, end uint64) uint64, maxSz uint
 			// Include this container in the container map.
 			containerMap[key] = off
 			totalSz += sz
-			card += uint64(getCardinality(cont))
 			continue
 		}
 
 		// We have reached the maxSz limit. Hence, create a split.
-		var newBms []*Bitmap
-		newBm := create(containerMap)
-
-		if totalSz > maxSz && card > 1 {
-			// Cardinality can be one, because a single posting is really big.
-			// So, we can't split it further in that case. Make further splits
-			// if cardinality is 2 or more.
-			newBms = splitFurther(newBm)
-
-		} else {
-			newBms = []*Bitmap{newBm}
-		}
-		splits = append(splits, newBms...)
+		splits = append(splits, create(containerMap, totalSz)...)
 
 		containerMap = make(map[uint64]uint64)
 		containerMap[key] = off
 		totalSz = sz
-		card = uint64(getCardinality(cont))
 	}
 	if len(containerMap) > 0 {
-		splits = append(splits, create(containerMap))
+		splits = append(splits, create(containerMap, totalSz)...)
 	}
 
 	return splits
