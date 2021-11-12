@@ -1269,11 +1269,8 @@ func (bm *Bitmap) NSplit(externalSize func(start, end uint64) uint64, maxSz uint
 		cont := bm.getContainer(off)
 
 		start, end := key, key+1<<16
-		sz := externalSize(start, end) + 2*uint64(cont[indexSize])
+		sz := externalSize(start, end) + 2*uint64(cont[indexSize]) // Converting to bytes.
 
-		if sz > 1<<10 {
-			fmt.Printf("---> sroar: Size is over 1MB: %d ext: %d int: %d\n\n", sz, externalSize(start, end), cont[indexSize])
-		}
 		// We can probably append more containers in the same bucket.
 		if totalSz+sz < maxSz || len(containerMap) == 0 {
 			// Include this container in the container map.
@@ -1284,7 +1281,6 @@ func (bm *Bitmap) NSplit(externalSize func(start, end uint64) uint64, maxSz uint
 
 		// We have reached the maxSz limit. Hence, create a split.
 		splits = append(splits, create(containerMap, totalSz)...)
-		fmt.Printf("---> sroar: Created a split of size: %d\n", totalSz)
 
 		containerMap = make(map[uint64]uint64)
 		containerMap[key] = off
