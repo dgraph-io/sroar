@@ -849,7 +849,7 @@ func TestSplit(t *testing.T) {
 		f := func(start, end uint64) uint64 { return 0 }
 
 		// Split the bitmaps.
-		bms := r.NSplit(f, 1<<10)
+		bms := r.Split(f, 1<<10)
 		var csum int
 		for _, bm := range bms {
 			csum += bm.GetCardinality()
@@ -864,11 +864,9 @@ func TestSplit(t *testing.T) {
 				id++
 			}
 		}
-
 	}
 
 	run(2)
-	run(10)
 	run(11)
 	run(1e3)
 	run(1e6)

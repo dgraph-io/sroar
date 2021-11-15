@@ -1190,7 +1190,7 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	return dst
 }
 
-func (bm *Bitmap) NSplit(externalSize func(start, end uint64) uint64, maxSz uint64) []*Bitmap {
+func (bm *Bitmap) Split(externalSize func(start, end uint64) uint64, maxSz uint64) []*Bitmap {
 	splitFurther := func(b *Bitmap) []*Bitmap {
 		itr := b.NewIterator()
 		newBm := NewBitmap()
