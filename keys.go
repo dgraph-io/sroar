@@ -14,6 +14,7 @@ var (
 // node stores uint64 keys and the corresponding container offset in the buffer.
 // 0th index (indexNodeSize) is used for storing the size of node in bytes.
 // 1st index (indexNumKeys) is used for storing the number of keys.
+// 2nd index is where we start writing the key-value pairs.
 type node []uint64
 
 func keyOffset(i int) int { return indexNodeStart + 2*i }

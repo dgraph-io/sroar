@@ -121,7 +121,7 @@ func NewBitmapWith(numKeys int) *Bitmap {
 	return ra
 }
 
-func (ra *Bitmap) allocateSpaceForKeys(N int) {
+func (ra *Bitmap) initSpaceForKeys(N int) {
 	if N == 0 {
 		return
 	}
@@ -132,16 +132,12 @@ func (ra *Bitmap) allocateSpaceForKeys(N int) {
 	ra.scootRight(curSize, bySize)
 	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
 	ra.keys.setNodeSize(int(curSize + bySize))
-	assert(false)
+	assert(1 == ra.keys.numKeys()) // This initialization assumes that the number of keys are 1.
 
-	// if keys[0] == 0 {
-	// 	// Don't touch the zero-th key.
-	// 	keys = keys[1:]
-	// }
-	// // All the keys are added with a zero offset.
-	// for i, k := range keys {
-	// 	ra.keys.setAt(keyOffset(i+1), k)
-	// }
+	// The containers have moved to the right bySize. So, update their offsets.
+	// Currently, there's only one container.
+	val := ra.keys.val(0)
+	ra.keys.setAt(valOffset(0), val+uint64(bySize))
 }
 
 // setKey sets a key and container offset.
@@ -434,7 +430,7 @@ func FromSortedList(vals []uint64) *Bitmap {
 	// } else {
 	// 	keys = append(keys, lastHi)
 	// }
-	ra.allocateSpaceForKeys(numKeys)
+	ra.initSpaceForKeys(numKeys)
 	// ra.setKey(lastHi, 0)
 
 	finalize := func(l []uint16, key uint64) {
