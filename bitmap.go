@@ -121,6 +121,29 @@ func NewBitmapWith(numKeys int) *Bitmap {
 	return ra
 }
 
+func (ra *Bitmap) allocateSpaceForKeys(N int) {
+	if N == 0 {
+		return
+	}
+	curSize := uint64(len(ra.keys) * 4) // U64 -> U16
+	bySize := uint64(N * 8)             // 2xU64 (key, value) -> 2x4xU16
+
+	// The following code is borrowed from setKey.
+	ra.scootRight(curSize, bySize)
+	ra.keys = toUint64Slice(ra.data[:curSize+bySize])
+	ra.keys.setNodeSize(int(curSize + bySize))
+	assert(false)
+
+	// if keys[0] == 0 {
+	// 	// Don't touch the zero-th key.
+	// 	keys = keys[1:]
+	// }
+	// // All the keys are added with a zero offset.
+	// for i, k := range keys {
+	// 	ra.keys.setAt(keyOffset(i+1), k)
+	// }
+}
+
 // setKey sets a key and container offset.
 func (ra *Bitmap) setKey(k uint64, offset uint64) uint64 {
 	if added := ra.keys.set(k, offset); !added {
@@ -395,14 +418,24 @@ func FromSortedList(vals []uint64) *Bitmap {
 	}
 
 	// Set the keys beforehand so that we don't need to move a lot of memory because of adding keys.
+	// TODO: We don't need the keys. Just the number of keys.
+	var numKeys int
 	for _, x := range vals {
 		hi = x & mask
 		if hi != 0 && hi != lastHi {
-			ra.setKey(lastHi, 0)
+			// keys = append(keys, lastHi)
+			numKeys++
+			// ra.setKey(lastHi, 0)
 		}
 		lastHi = hi
 	}
-	ra.setKey(lastHi, 0)
+	// if len(keys) > 0 && lastHi == keys[len(keys)-1] {
+	// 	// do not append.
+	// } else {
+	// 	keys = append(keys, lastHi)
+	// }
+	ra.allocateSpaceForKeys(numKeys)
+	// ra.setKey(lastHi, 0)
 
 	finalize := func(l []uint16, key uint64) {
 		if len(l) == 0 {
