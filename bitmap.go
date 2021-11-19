@@ -1226,7 +1226,7 @@ func (bm *Bitmap) Split(externalSize func(start, end uint64) uint64, maxSz uint6
 		var sz uint64
 		var bms []*Bitmap
 		for id := itr.Next(); id != 0; id = itr.Next() {
-			sz += externalSize(id, id+1)
+			sz += externalSize(id, addUint64(id, 1))
 			newBm.Set(id)
 			if sz >= maxSz {
 				bms = append(bms, newBm)
@@ -1297,7 +1297,7 @@ func (bm *Bitmap) Split(externalSize func(start, end uint64) uint64, maxSz uint6
 		off := bm.keys.val(i)
 		cont := bm.getContainer(off)
 
-		start, end := key, key+1<<16
+		start, end := key, addUint64(key, 1<<16)
 		sz := externalSize(start, end) + 2*uint64(cont[indexSize]) // Converting to bytes.
 
 		// We can probably append more containers in the same bucket.
