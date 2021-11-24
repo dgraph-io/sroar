@@ -1214,7 +1214,7 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 // such that size of each split bitmap + external size corresponding to its elements approximately
 // equal to maxSz (it can be greater than maxSz sometimes). The splits are returned in sorted order.
 // externalSize is a function that should return the external size corresponding to elements in
-// range [start, end). External size is used to calculate the split boundaries.
+// range [start, end]. External size is used to calculate the split boundaries.
 func (bm *Bitmap) Split(externalSize func(start, end uint64) uint64, maxSz uint64) []*Bitmap {
 	splitFurther := func(b *Bitmap) []*Bitmap {
 		itr := b.NewIterator()
@@ -1222,7 +1222,7 @@ func (bm *Bitmap) Split(externalSize func(start, end uint64) uint64, maxSz uint6
 		var sz uint64
 		var bms []*Bitmap
 		for id := itr.Next(); id != 0; id = itr.Next() {
-			sz += externalSize(id, addUint64(id, 1))
+			sz += externalSize(id, id)
 			newBm.Set(id)
 			if sz >= maxSz {
 				bms = append(bms, newBm)
@@ -1293,7 +1293,7 @@ func (bm *Bitmap) Split(externalSize func(start, end uint64) uint64, maxSz uint6
 		off := bm.keys.val(i)
 		cont := bm.getContainer(off)
 
-		start, end := key, addUint64(key, 1<<16)
+		start, end := key, addUint64(key, 1<<16-1)
 		sz := externalSize(start, end) + 2*uint64(cont[indexSize]) // Converting to bytes.
 
 		// We can probably append more containers in the same bucket.
