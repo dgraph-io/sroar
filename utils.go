@@ -18,6 +18,7 @@ package sroar
 
 import (
 	"log"
+	"math"
 	"reflect"
 	"unsafe"
 
@@ -49,6 +50,14 @@ func max16(a, b uint16) uint16 {
 		return a
 	}
 	return b
+}
+
+// Returns sum of a and b. If the result overflows uint64, it returns math.MaxUint64.
+func addUint64(a, b uint64) uint64 {
+	if a > math.MaxUint64-b {
+		return math.MaxUint64
+	}
+	return a + b
 }
 
 func toByteSlice(b []uint16) []byte {

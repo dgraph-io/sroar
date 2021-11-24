@@ -839,3 +839,35 @@ func TestRank(t *testing.T) {
 		}
 	}
 }
+
+func TestSplit(t *testing.T) {
+	run := func(n int) {
+		r := NewBitmap()
+		for i := 1; i <= n; i++ {
+			r.Set(uint64(i))
+		}
+		f := func(start, end uint64) uint64 { return 0 }
+
+		// Split the bitmaps.
+		bms := r.Split(f, 1<<10)
+		var csum int
+		for _, bm := range bms {
+			csum += bm.GetCardinality()
+		}
+		require.Equal(t, n, csum)
+
+		id := uint64(1)
+		for _, bm := range bms {
+			itr := bm.NewIterator()
+			for cur := itr.Next(); cur != 0; cur = itr.Next() {
+				require.Equal(t, id, cur)
+				id++
+			}
+		}
+	}
+
+	run(2)
+	run(11)
+	run(1e3)
+	run(1e6)
+}
