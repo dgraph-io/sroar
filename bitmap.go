@@ -1210,6 +1210,11 @@ func FastOr(bitmaps ...*Bitmap) *Bitmap {
 	return dst
 }
 
+// Split splits the bitmap based on maxSz and the externalSize function. It splits the bitmap
+// such that size of each split bitmap + external size corresponding to its elements approximately
+// equal to maxSz (it can be greater than maxSz sometimes). The splits are returned in sorted order.
+// externalSize is a function that should return the external size corresponding to elements in
+// range [start, end). External size is used to calculate the split boundaries.
 func (bm *Bitmap) Split(externalSize func(start, end uint64) uint64, maxSz uint64) []*Bitmap {
 	splitFurther := func(b *Bitmap) []*Bitmap {
 		itr := b.NewIterator()
