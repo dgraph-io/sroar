@@ -414,24 +414,15 @@ func FromSortedList(vals []uint64) *Bitmap {
 	}
 
 	// Set the keys beforehand so that we don't need to move a lot of memory because of adding keys.
-	// TODO: We don't need the keys. Just the number of keys.
 	var numKeys int
 	for _, x := range vals {
 		hi = x & mask
 		if hi != 0 && hi != lastHi {
-			// keys = append(keys, lastHi)
 			numKeys++
-			// ra.setKey(lastHi, 0)
 		}
 		lastHi = hi
 	}
-	// if len(keys) > 0 && lastHi == keys[len(keys)-1] {
-	// 	// do not append.
-	// } else {
-	// 	keys = append(keys, lastHi)
-	// }
 	ra.initSpaceForKeys(numKeys)
-	// ra.setKey(lastHi, 0)
 
 	finalize := func(l []uint16, key uint64) {
 		if len(l) == 0 {
