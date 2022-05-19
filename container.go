@@ -705,7 +705,7 @@ func containerOr(ac, bc, buf []uint16, runMode int) []uint16 {
 		right := bitmap(bc)
 		return left.orBitmap(right, buf, runMode)
 	}
-	panic("containerAnd: We should not reach here")
+	panic("containerOr: We should not reach here")
 }
 
 func containerAnd(ac, bc []uint16) []uint16 {
