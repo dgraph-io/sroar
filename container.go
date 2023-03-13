@@ -645,7 +645,7 @@ func (b bitmap) maximum() uint16 {
 		if tz == 16 {
 			continue
 		}
-		return uint16(16*i + 15 - tz)
+		return uint16(16*(i - int(startIdx)) + 15 - tz)
 	}
 	panic("We shouldn't reach here")
 }
