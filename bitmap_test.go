@@ -711,6 +711,14 @@ func TestExtremes(t *testing.T) {
 	a.Set(100000)
 	require.Equal(t, uint64(100000), a.Minimum())
 	require.Equal(t, uint64(100000), a.Maximum())
+
+	a.Remove(100000)
+	a = NewBitmap()
+	for i := 0; i <= maxContainerSize; i++ {
+		a.Set(uint64(i))
+	}
+	require.Equal(t, uint64(0), a.Minimum())
+	require.Equal(t, uint64(maxContainerSize), a.Maximum())
 }
 
 func TestCleanup(t *testing.T) {
