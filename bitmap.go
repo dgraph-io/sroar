@@ -282,11 +282,11 @@ func stepSize(n uint16) uint16 {
 // copyAt would copy over a given container via src, into the container at
 // offset. If src is a bitmap, it would copy it over directly. If src is an
 // array container, then it would follow these paths:
-// - If src is smaller than dst, copy it over.
-// - If not, look for target size for dst using the stepSize function.
-// - If target size is maxSize, then convert src to a bitmap container, and
-// 		copy to dst.
-// - If target size is not max size, then expand dst container and copy src.
+//   - If src is smaller than dst, copy it over.
+//   - If not, look for target size for dst using the stepSize function.
+//   - If target size is maxSize, then convert src to a bitmap container, and
+//     copy to dst.
+//   - If target size is not max size, then expand dst container and copy src.
 func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 	dstSize := ra.data[offset]
 	if dstSize == 0 {
@@ -606,6 +606,12 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 		c := ra.getContainer(off)
 		removeRangeContainer(c, 0, uint16(hi)-1)
 	}
+}
+
+// Capacity returns the underlying arrays uint16 capacity.
+// used to reduce amount of reallocations.
+func (ra *Bitmap) Capacity() int {
+	return cap(ra.data)
 }
 
 func (ra *Bitmap) Reset() {
