@@ -282,11 +282,11 @@ func stepSize(n uint16) uint16 {
 // copyAt would copy over a given container via src, into the container at
 // offset. If src is a bitmap, it would copy it over directly. If src is an
 // array container, then it would follow these paths:
-// - If src is smaller than dst, copy it over.
-// - If not, look for target size for dst using the stepSize function.
-// - If target size is maxSize, then convert src to a bitmap container, and
-// 		copy to dst.
-// - If target size is not max size, then expand dst container and copy src.
+//   - If src is smaller than dst, copy it over.
+//   - If not, look for target size for dst using the stepSize function.
+//   - If target size is maxSize, then convert src to a bitmap container, and
+//     copy to dst.
+//   - If target size is not max size, then expand dst container and copy src.
 func (ra *Bitmap) copyAt(offset uint64, src []uint16) {
 	dstSize := ra.data[offset]
 	if dstSize == 0 {
@@ -608,6 +608,12 @@ func (ra *Bitmap) RemoveRange(lo, hi uint64) {
 	}
 }
 
+// Capacity returns the underlying arrays uint16 capacity.
+// used to reduce amount of reallocations.
+func (ra *Bitmap) Capacity() int {
+	return cap(ra.data)
+}
+
 func (ra *Bitmap) Reset() {
 	// reset ra.data to size enough for one container and corresponding key.
 	// 2 u64 is needed for header and another 2 u16 for the key 0.
@@ -790,9 +796,13 @@ func (ra *Bitmap) And(bm *Bitmap) {
 			off = b.keys.val(bi)
 			bc := b.getContainer(off)
 
+			var buf []uint16
+			if ac[indexType] == typeBitmap && bc[indexType] == typeBitmap {
+				buf = make([]uint16, maxContainerSize)
+			}
 			// do the intersection
 			// TODO: See if we can do containerAnd operation in-place.
-			c := containerAnd(ac, bc)
+			c := containerAnd(ac, bc, buf)
 
 			// create a new container and update the key offset to this container.
 			offset := a.newContainer(uint16(len(c)))
@@ -831,7 +841,11 @@ func And(a, b *Bitmap) *Bitmap {
 			off = b.keys.val(bi)
 			bc := b.getContainer(off)
 
-			outc := containerAnd(ac, bc)
+			var buf []uint16
+			if ac[indexType] == typeBitmap && bc[indexType] == typeBitmap {
+				buf = make([]uint16, maxContainerSize)
+			}
+			outc := containerAnd(ac, bc, buf)
 			if getCardinality(outc) > 0 {
 				offset := res.newContainer(uint16(len(outc)))
 				copy(res.data[offset:], outc)
