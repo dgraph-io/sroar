@@ -796,9 +796,13 @@ func (ra *Bitmap) And(bm *Bitmap) {
 			off = b.keys.val(bi)
 			bc := b.getContainer(off)
 
+			var buf []uint16
+			if ac[indexType] == typeBitmap && bc[indexType] == typeBitmap {
+				buf = make([]uint16, maxContainerSize)
+			}
 			// do the intersection
 			// TODO: See if we can do containerAnd operation in-place.
-			c := containerAnd(ac, bc)
+			c := containerAnd(ac, bc, buf)
 
 			// create a new container and update the key offset to this container.
 			offset := a.newContainer(uint16(len(c)))
@@ -837,7 +841,11 @@ func And(a, b *Bitmap) *Bitmap {
 			off = b.keys.val(bi)
 			bc := b.getContainer(off)
 
-			outc := containerAnd(ac, bc)
+			var buf []uint16
+			if ac[indexType] == typeBitmap && bc[indexType] == typeBitmap {
+				buf = make([]uint16, maxContainerSize)
+			}
+			outc := containerAnd(ac, bc, buf)
 			if getCardinality(outc) > 0 {
 				offset := res.newContainer(uint16(len(outc)))
 				copy(res.data[offset:], outc)
